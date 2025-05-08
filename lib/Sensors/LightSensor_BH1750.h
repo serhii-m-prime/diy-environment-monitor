@@ -1,22 +1,21 @@
 #pragma once
 
-#include "IDataSensor.h"
-#include <Adafruit_BME280.h>
+#include <IDataSensor.h>
 #include <SensorData.h>
+#include <BH1750.h>
 
-class TempHumPressSensor_BME280 : public IDataSensor
+class LightSensor_BH1750 : public IDataSensor
 {
 public:
-    TempHumPressSensor_BME280(int address);
+    LightSensor_BH1750();
     void begin() override;
     SensorData *getData() override;
     SensorData *getPrevData() override;
     unsigned long getLastUpdateTime() override { return _lastUpdateTime; }
-
 private:
     int _address;
-    Adafruit_BME280 *_sensor;
-    TempHumPressureData _data;
-    TempHumPressureData _prevData;
+    BH1750 *_sensor;
+    LightData _data;
+    LightData _prevData;
     unsigned long _lastUpdateTime;
 };
