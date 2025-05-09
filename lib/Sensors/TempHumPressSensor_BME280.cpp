@@ -6,7 +6,6 @@ TempHumPressSensor_BME280::TempHumPressSensor_BME280(int address)
 {
     _address = address;
     _sensor = new Adafruit_BME280();
-    _lastUpdateTime = 0;
     _data.temperature = 0;
     _data.humidity = 0;
     _data.pressure = 0;
@@ -42,7 +41,6 @@ void TempHumPressSensor_BME280::begin()
  */
 SensorData *TempHumPressSensor_BME280::getData()
 {
-    _lastUpdateTime = millis();
     _prevData = _data;
     _sensor->takeForcedMeasurement();
     _data.temperature = _sensor->readTemperature();

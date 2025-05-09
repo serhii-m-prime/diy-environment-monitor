@@ -11,12 +11,10 @@ public:
     void begin() override;
     SensorData *getData() override;
     SensorData *getPrevData() override;
-    unsigned long getLastUpdateTime() override { return _lastUpdateTime; }
 
 private:
     int _address;
     Adafruit_BME280 *_sensor;
     TempHumPressureData _data;
     TempHumPressureData _prevData;
-    unsigned long _lastUpdateTime;
 };

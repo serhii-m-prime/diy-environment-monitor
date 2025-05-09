@@ -11,11 +11,9 @@ public:
     void begin() override;
     SensorData *getData() override;
     SensorData *getPrevData() override;
-    unsigned long getLastUpdateTime() override { return _lastUpdateTime; }
 private:
     int _address;
     BH1750 *_sensor;
     LightData _data;
     LightData _prevData;
-    unsigned long _lastUpdateTime;
 };

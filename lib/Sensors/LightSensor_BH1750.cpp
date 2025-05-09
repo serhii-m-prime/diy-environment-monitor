@@ -8,7 +8,6 @@
 LightSensor_BH1750::LightSensor_BH1750()
 {
     _sensor = new BH1750();
-    _lastUpdateTime = 0;
     _data.lux = 0;
     _prevData = _data;
 }
@@ -22,7 +21,6 @@ void LightSensor_BH1750::begin()
         DEBUG_PRINTLN("BH1750 not found");
         return;
     }
-    _lastUpdateTime = millis();
 }
 
 /**
@@ -35,7 +33,6 @@ SensorData *LightSensor_BH1750::getData()
     if (_sensor->measurementReady()) {
         _prevData = _data;
         _data.lux = _sensor->readLightLevel();
-        _lastUpdateTime = millis();
         return &_data;
     }
     return nullptr;

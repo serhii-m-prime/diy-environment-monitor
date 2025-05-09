@@ -8,7 +8,6 @@
 TempHumSensor_AHT10::TempHumSensor_AHT10()
 {
     _sensor = new Adafruit_AHTX0();
-    _lastUpdateTime = 0;
     _data.temperature = 0;
     _data.humidity = 0;
     _prevData = _data;
@@ -23,7 +22,6 @@ void TempHumSensor_AHT10::begin()
         DEBUG_PRINTLN("AHT10 not found");
         return;
     }
-    _lastUpdateTime = millis();
 }
 
 /**
@@ -37,7 +35,6 @@ SensorData *TempHumSensor_AHT10::getData()
         _prevData = _data;
         _data.temperature = temperature.temperature;
         _data.humidity = humidity.relative_humidity;
-        _lastUpdateTime = millis();
         return &_data;
     }
     return nullptr;

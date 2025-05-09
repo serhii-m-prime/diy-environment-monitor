@@ -10,9 +10,7 @@ CO2Sensor_MHZ19::CO2Sensor_MHZ19(int txPin, int rxPin)
 {
     _txPin = txPin;
     _rxPin = rxPin;
-    _lastUpdateTime = 0;
     _sensor = new MHZ19();
-
 }
 
 /**
@@ -33,7 +31,6 @@ void CO2Sensor_MHZ19::begin()
  */
 SensorData* CO2Sensor_MHZ19::getData()
 {
-    _lastUpdateTime = millis();
     _prevData = _data;
     _data.ppm = _sensor->getCO2();
     _data.temperature = _sensor->getTemperature();

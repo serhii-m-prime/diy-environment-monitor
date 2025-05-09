@@ -11,11 +11,9 @@ public:
     void begin() override;
     SensorData *getData() override;
     SensorData *getPrevData() override;
-    unsigned long getLastUpdateTime() override { return _lastUpdateTime; }
 private:
     int _address;
     Adafruit_AHTX0 *_sensor;
     TempHumData _data;
     TempHumData _prevData;
-    unsigned long _lastUpdateTime;
 };
