@@ -8,7 +8,7 @@
 #include <CO2Sensor_MHZ19.h>
 #include <TempHumPressSensor_BME280.h>
 #include <LightSensor_BH1750.h>
-
+#include <State.h>
 #include <SPI.h>
 #include <Adafruit_ST7796S.h>
 
@@ -57,12 +57,14 @@
 #define MOTOR_FREQ 5000
 #define MOTOR_RES 8
 
+State state;
+
 IEventSensor *button = new GPIOButton(PIN_BTN_DS_CONTROL);
-IEventSensor *pir = new PIRMotionSensor(PIN_PIR_SENSOR);
+IEventSensor *pirSensor = new PIRMotionSensor(PIN_PIR_SENSOR);
 
 IDataSensor *co2Sensor = new CO2Sensor_MHZ19(PIN_CO2_UART_TX, PIN_CO2_UART_RX);
-IDataSensor *bme280 = new TempHumPressSensor_BME280(BME280_ADDRESS);
-IDataSensor *bh1750 = new LightSensor_BH1750();
+IDataSensor *envSensor = new TempHumPressSensor_BME280(BME280_ADDRESS);
+IDataSensor *lightSensor = new LightSensor_BH1750();
 
 Adafruit_ST7796S tft = Adafruit_ST7796S(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 
@@ -71,44 +73,7 @@ int lastRun = 0;
 int displayOn = 0;
 float currentLightLevel = 0.0f;
 
-/**
- * @brief Scan I2C bus for connected devices
- */
-void I2CScan()
-{
-  DEBUG_PRINTLN("Scanning I2C bus...");
-
-  byte count = 0;
-
-  for (byte address = 1; address < 127; ++address)
-  {
-    Wire.beginTransmission(address);
-    byte error = Wire.endTransmission();
-
-    if (error == 0)
-    {
-      DEBUG_PRINT("Found I2C device at 0x");
-      DEBUG_PRINTLN(address, HEX);
-      ++count;
-    }
-    else if (error == 4)
-    {
-      DEBUG_PRINT("Unknown error at 0x");
-      DEBUG_PRINTLN(address, HEX);
-    }
-  }
-
-  if (count == 0)
-  {
-    DEBUG_PRINTLN("No I2C devices found.");
-  }
-  else
-  {
-    DEBUG_PRINTF("Scan complete. %d device(s) found.\n", count);
-  }
-}
-
-void setBrightness(uint16_t lightInLux)
+void setBrightness(uint16_t lightInLux, bool isOff)
 {
   if (lightInLux * 5.0f >= 4095)
   {
@@ -117,6 +82,10 @@ void setBrightness(uint16_t lightInLux)
   else
   {
     lightInLux = lightInLux * 5.0f;
+  }
+  if (!isOff && lightInLux <= 0)
+  {
+    lightInLux = 3;
   }
   ledcWrite(TFT_LED_CHANNEL, lightInLux);
 }
@@ -142,38 +111,35 @@ void setup()
   tft.setSPISpeed(SPI_FREQUENCY);
   tft.setRotation(3);
   tft.sendCommand(ST77XX_INVOFF);
+  tft.setTextColor(ST77XX_YELLOW);
+  tft.setTextSize(4);
 
-  // button
-  button->onEvent([]()
-                  { DEBUG_PRINTLN("Button pressed CONFIRMED"); });
+  button->onEvent([]() { DEBUG_PRINTLN("Button pressed CONFIRMED"); });
   button->begin();
-  // pir
-  pir->onEvent([]()
-               {
+  pirSensor->onEvent([]()
+                     {
                  DEBUG_PRINTLN("Motion CONFIRMED");
-                 setBrightness((uint16_t)currentLightLevel); 
+                 setBrightness((uint16_t)currentLightLevel, false); 
                  tft.sendCommand(ST77XX_DISPON);
                  displayOn = 1; });
-  pir->onEventEnd([]()
-                  { DEBUG_PRINTLN("Motion ENDED"); 
+  pirSensor->onEventEnd([]()
+                        {
+     DEBUG_PRINTLN("Motion ENDED"); 
                     tft.sendCommand(ST77XX_DISPOFF);
-                    setBrightness(0);
+                    setBrightness(0, true);
                     displayOn = 0; });
-  pir->setDebounceDelay(20);
-  pir->begin();
-  // CO2
+  pirSensor->setDebounceDelay(20);
+  pirSensor->begin();
   co2Sensor->begin();
-  // BME280
-  bme280->begin();
-  // BH1750
-  bh1750->begin();
+  envSensor->begin();
+  lightSensor->begin();
 }
 
 void loop()
 {
   long time = millis();
   button->update();
-  pir->update();
+  pirSensor->update();
   // read loop
   if (lastRun == 0 || time - lastRun > (interval - 7000))
   {
@@ -184,22 +150,15 @@ void loop()
   {
     DEBUG_PRINTLN("");
     DEBUG_PRINTLN("Data collected:");
+    state.flushData();
     tft.fillScreen(ST77XX_BLACK);
-    tft.setTextColor(ST77XX_YELLOW);
-    tft.setTextSize(4);
+    
 
     // get data from CO2 sensor
     SensorData *data = co2Sensor->getData();
-    if (auto *co2Data = static_cast<CO2Data *>(data))
+    if (CO2Data *co2Data = static_cast<CO2Data *>(data))
     {
-      DEBUG_PRINT("[MHZ19C] CO2: ");
-      DEBUG_PRINT(co2Data->ppm);
-      DEBUG_PRINT(" ppm, ");
-      DEBUG_PRINT("Temperature: ");
-      DEBUG_PRINT(co2Data->temperature);
-      DEBUG_PRINT(" °C");
-      DEBUG_PRINT(", Time: ");
-      DEBUG_PRINTLN(co2Sensor->getLastUpdateTime());
+      state.fill(co2Data);
       tft.setCursor(5, 5);
       tft.print("CO2: ");
       tft.print(co2Data->ppm);
@@ -214,20 +173,10 @@ void loop()
       DEBUG_PRINTLN("CO2 No data available");
     }
     // Get data from BME280 sensor
-    SensorData *bmeData = bme280->getData();
-    if (auto *bmeDataPtr = static_cast<TempHumPressureData *>(bmeData))
+    SensorData *bmeData = envSensor->getData();
+    if (TempHumPressureData *bmeDataPtr = static_cast<TempHumPressureData *>(bmeData))
     {
-      DEBUG_PRINT("[BME280]Temperature: ");
-      DEBUG_PRINT(bmeDataPtr->temperature);
-      DEBUG_PRINT(" °C, ");
-      DEBUG_PRINT("Humidity: ");
-      DEBUG_PRINT(bmeDataPtr->humidity);
-      DEBUG_PRINT(" %, ");
-      DEBUG_PRINT("Pressure: ");
-      DEBUG_PRINT(bmeDataPtr->pressure);
-      DEBUG_PRINT(" hPa");
-      DEBUG_PRINT(", Time: ");
-      DEBUG_PRINTLN(bme280->getLastUpdateTime());
+      state.fill(bmeDataPtr);
       tft.setCursor(5, 85);
       tft.print("Temp: ");
       tft.print(bmeDataPtr->temperature);
@@ -248,14 +197,10 @@ void loop()
       DEBUG_PRINTLN("BME280 No data available");
     }
     // Get data from BH1750 sensor
-    SensorData *bhData = bh1750->getData();
-    if (auto *bhDataPtr = static_cast<LightData *>(bhData))
+    SensorData *bhData = lightSensor->getData();
+    if (LightData *bhDataPtr = static_cast<LightData *>(bhData))
     {
-      DEBUG_PRINT("[BH1750]Light: ");
-      DEBUG_PRINT(bhDataPtr->lux);
-      DEBUG_PRINT(" lx, ");
-      DEBUG_PRINT("Time: ");
-      DEBUG_PRINTLN(bh1750->getLastUpdateTime());
+      state.fill(bhDataPtr);
       tft.setCursor(5, 205);
       tft.print("Light: ");
       tft.print(bhDataPtr->lux);
@@ -268,14 +213,15 @@ void loop()
       currentLightLevel = bhDataPtr->lux;
       if (displayOn)
       {
-        setBrightness((uint16_t)currentLightLevel);
+        setBrightness((uint16_t)currentLightLevel, false);
       }
     }
     else
     {
       DEBUG_PRINTLN("BH1750 No data available");
     }
-    DEBUG_PRINTLN("");
+    DEBUG_PRINTLN(state.toString());
+    DEBUG_PRINTLN("Loop time : " + String(millis() - time) + " ms");
     lastRun = time;
     ledcWrite(MOTOR_CHANNEL, 0);
   }
