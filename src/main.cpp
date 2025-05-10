@@ -10,7 +10,6 @@
 #include <LightSensor_BH1750.h>
 #include <State.h>
 #include <SPI.h>
-#include <Adafruit_ST7796S.h>
 
 // Pin definitions
 #define PIN_BUILT_IN_LED 2
@@ -66,8 +65,6 @@ IDataSensor *co2Sensor = new CO2Sensor_MHZ19(PIN_CO2_UART_TX, PIN_CO2_UART_RX);
 IDataSensor *envSensor = new TempHumPressSensor_BME280(BME280_ADDRESS);
 IDataSensor *lightSensor = new LightSensor_BH1750();
 
-Adafruit_ST7796S tft = Adafruit_ST7796S(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
-
 int interval = 60000;
 int lastRun = 0;
 
@@ -103,25 +100,18 @@ void setup()
   ledcSetup(MOTOR_CHANNEL, MOTOR_FREQ, MOTOR_RES);
   ledcAttachPin(MOTOR_PIN, MOTOR_CHANNEL);
 
-  tft.init(TFT_WIDTH, TFT_HEIGHT, 0, 0, ST7796S_BGR);
-  tft.setSPISpeed(SPI_FREQUENCY);
-  tft.setRotation(3);
-  tft.sendCommand(ST77XX_INVOFF);
-  tft.setTextColor(ST77XX_YELLOW);
-  tft.setTextSize(4);
-
   button->onEvent([]() { DEBUG_PRINTLN("Button pressed CONFIRMED"); });
   button->begin();
   pirSensor->onEvent([]()
                      {
                  DEBUG_PRINTLN("Motion CONFIRMED");
                  setBrightness((uint16_t)state.getLightLevel(), false); 
-                 tft.sendCommand(ST77XX_DISPON);
+                
                  state.setDisplayOn(true); });
   pirSensor->onEventEnd([]()
                         {
      DEBUG_PRINTLN("Motion ENDED"); 
-                    tft.sendCommand(ST77XX_DISPOFF);
+                   
                     setBrightness(0, true);
                     state.setDisplayOn(false); });
   pirSensor->setDebounceDelay(20);
@@ -147,22 +137,12 @@ void loop()
     DEBUG_PRINTLN("");
     DEBUG_PRINTLN("Data collected:");
     state.flushData();
-    tft.fillScreen(ST77XX_BLACK);
     
-
     // get data from CO2 sensor
     SensorData *data = co2Sensor->getData();
     if (CO2Data *co2Data = static_cast<CO2Data *>(data))
     {
       state.fill(co2Data);
-      tft.setCursor(5, 5);
-      tft.print("CO2: ");
-      tft.print(co2Data->ppm);
-      tft.print(" ppm");
-      tft.setCursor(5, 45);
-      tft.print("Temp: ");
-      tft.print(co2Data->temperature);
-      tft.print(" C");
     }
     else
     {
@@ -173,20 +153,6 @@ void loop()
     if (TempHumPressureData *bmeDataPtr = static_cast<TempHumPressureData *>(bmeData))
     {
       state.fill(bmeDataPtr);
-      tft.setCursor(5, 85);
-      tft.print("Temp: ");
-      tft.print(bmeDataPtr->temperature);
-      tft.print(" C");
-      tft.setCursor(5, 125);
-      tft.print("Humidity: ");
-      tft.print(bmeDataPtr->humidity);
-      tft.print(" %");
-      tft.setCursor(5, 165);
-      tft.print("Pressure: ");
-      char buffer[10];
-      sprintf(buffer, "%.1f", bmeDataPtr->pressure);
-      tft.print(buffer);
-      tft.print(" hPa");
     }
     else
     {
@@ -197,15 +163,6 @@ void loop()
     if (LightData *bhDataPtr = static_cast<LightData *>(bhData))
     {
       state.fill(bhDataPtr);
-      tft.setCursor(5, 205);
-      tft.print("Light: ");
-      tft.print(bhDataPtr->lux);
-      tft.print(" Lx");
-      tft.setCursor(5, 245);
-      tft.print("Iteration: ");
-      tft.print(millis() - time);
-      tft.print(" ms");
-      tft.setCursor(5, 285);
       if (state.isDisplayOn())
       {
         setBrightness((uint16_t)state.getLightLevel(), false);
