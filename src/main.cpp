@@ -70,8 +70,6 @@ Adafruit_ST7796S tft = Adafruit_ST7796S(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_
 
 int interval = 60000;
 int lastRun = 0;
-int displayOn = 0;
-float currentLightLevel = 0.0f;
 
 void setBrightness(uint16_t lightInLux, bool isOff)
 {
@@ -94,8 +92,6 @@ void setup()
 {
   DEBUG_BEGIN(115200);
   DEBUG_PRINTLN("Starting...");
-  delay(100);
-  // Initailize I2C
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
 #ifdef DEBUG_ENABLED
   I2CScan();
@@ -119,15 +115,15 @@ void setup()
   pirSensor->onEvent([]()
                      {
                  DEBUG_PRINTLN("Motion CONFIRMED");
-                 setBrightness((uint16_t)currentLightLevel, false); 
+                 setBrightness((uint16_t)state.getLightLevel(), false); 
                  tft.sendCommand(ST77XX_DISPON);
-                 displayOn = 1; });
+                 state.setDisplayOn(true); });
   pirSensor->onEventEnd([]()
                         {
      DEBUG_PRINTLN("Motion ENDED"); 
                     tft.sendCommand(ST77XX_DISPOFF);
                     setBrightness(0, true);
-                    displayOn = 0; });
+                    state.setDisplayOn(false); });
   pirSensor->setDebounceDelay(20);
   pirSensor->begin();
   co2Sensor->begin();
@@ -210,10 +206,9 @@ void loop()
       tft.print(millis() - time);
       tft.print(" ms");
       tft.setCursor(5, 285);
-      currentLightLevel = bhDataPtr->lux;
-      if (displayOn)
+      if (state.isDisplayOn())
       {
-        setBrightness((uint16_t)currentLightLevel, false);
+        setBrightness((uint16_t)state.getLightLevel(), false);
       }
     }
     else
