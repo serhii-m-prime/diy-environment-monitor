@@ -32,11 +32,11 @@
 #define TFT_WIDTH 320
 #define TFT_HEIGHT 480
 
-#define TFT_CS 39
+#define TFT_CS 10
 #define TFT_RST 15
-#define TFT_DC 38
-#define TFT_MOSI 35
-#define TFT_SCLK 36
+#define TFT_DC 9
+#define TFT_MOSI 11
+#define TFT_SCLK 12
 
 #define TFT_LED 5
 
