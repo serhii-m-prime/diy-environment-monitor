@@ -410,6 +410,7 @@ void setup()
   envSensor->begin();
   lightSensor->begin();
 
+  SPI.begin(12, 13, 11, 10);
 
 tft.init();
 
