@@ -137,7 +137,7 @@ void loop()
   button->update();
   pirSensor->update();
   // read loop
-  if (lastRun == 0 || time - lastRun > (interval - 7000))
+  if (lastRun == 0 || time - lastRun > (interval - 10000))
   {
     ledcWrite(MOTOR_CHANNEL, 142);
   }
@@ -149,20 +149,11 @@ void loop()
     state.flushData();
     tft.fillScreen(ST77XX_BLACK);
     
-
     // get data from CO2 sensor
     SensorData *data = co2Sensor->getData();
     if (CO2Data *co2Data = static_cast<CO2Data *>(data))
     {
       state.fill(co2Data);
-      tft.setCursor(5, 5);
-      tft.print("CO2: ");
-      tft.print(co2Data->ppm);
-      tft.print(" ppm");
-      tft.setCursor(5, 45);
-      tft.print("Temp: ");
-      tft.print(co2Data->temperature);
-      tft.print(" C");
     }
     else
     {
@@ -173,20 +164,7 @@ void loop()
     if (TempHumPressureData *bmeDataPtr = static_cast<TempHumPressureData *>(bmeData))
     {
       state.fill(bmeDataPtr);
-      tft.setCursor(5, 85);
-      tft.print("Temp: ");
-      tft.print(bmeDataPtr->temperature);
-      tft.print(" C");
-      tft.setCursor(5, 125);
-      tft.print("Humidity: ");
-      tft.print(bmeDataPtr->humidity);
-      tft.print(" %");
-      tft.setCursor(5, 165);
-      tft.print("Pressure: ");
-      char buffer[10];
-      sprintf(buffer, "%.1f", bmeDataPtr->pressure);
-      tft.print(buffer);
-      tft.print(" hPa");
+      
     }
     else
     {
@@ -197,15 +175,6 @@ void loop()
     if (LightData *bhDataPtr = static_cast<LightData *>(bhData))
     {
       state.fill(bhDataPtr);
-      tft.setCursor(5, 205);
-      tft.print("Light: ");
-      tft.print(bhDataPtr->lux);
-      tft.print(" Lx");
-      tft.setCursor(5, 245);
-      tft.print("Iteration: ");
-      tft.print(millis() - time);
-      tft.print(" ms");
-      tft.setCursor(5, 285);
       if (state.isDisplayOn())
       {
         setBrightness((uint16_t)state.getLightLevel(), false);
@@ -216,6 +185,26 @@ void loop()
       DEBUG_PRINTLN("BH1750 No data available");
     }
     DEBUG_PRINTLN(state.toString());
+      char buffer[128];
+      tft.setCursor(5, 10);
+      sprintf(buffer, "CO2: %d ppm", state.getCO2());
+      tft.print(buffer);
+      tft.setCursor(5, 60);
+      sprintf(buffer, "Temp: %.1f C", state.getTemperature());
+      tft.print(buffer);
+      tft.setCursor(5, 110);
+      sprintf(buffer, "Humidity: %.1f %%", state.getHumidity());
+      tft.print(buffer);
+      tft.setCursor(5, 160);
+      sprintf(buffer, "Pressure: %.1f hPa", state.getPressure());
+      tft.print(buffer);
+      tft.setCursor(5, 210);
+      sprintf(buffer, "Light: %.1f Lx", state.getLightLevel());
+      tft.print(buffer);
+      tft.setCursor(5, 260);
+      sprintf(buffer, "Interval: %d ms", millis() - time);
+      tft.print(buffer);
+      tft.setCursor(5, 310);
     DEBUG_PRINTLN("Loop time : " + String(millis() - time) + " ms");
     lastRun = time;
     ledcWrite(MOTOR_CHANNEL, 0);
