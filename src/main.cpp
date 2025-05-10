@@ -49,7 +49,7 @@
 #define LOAD_FONT4
 #define LOAD_GFXFF
 
-#define SPI_FREQUENCY 40000000
+#define SPI_FREQUENCY 80000000
 
 // cooler definitions
 #define MOTOR_PIN 6
@@ -66,20 +66,23 @@ IDataSensor *co2Sensor = new CO2Sensor_MHZ19(PIN_CO2_UART_TX, PIN_CO2_UART_RX);
 IDataSensor *envSensor = new TempHumPressSensor_BME280(BME280_ADDRESS);
 IDataSensor *lightSensor = new LightSensor_BH1750();
 
-Adafruit_ST7796S tft = Adafruit_ST7796S(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+// Створюємо окремий об’єкт SPI на HSPI
+SPIClass *tftSPI = new SPIClass(HSPI);
+// Створюємо об’єкт дисплея, передаючи посилання на tftSPI
+Adafruit_ST7796S tft(tftSPI, TFT_CS, TFT_DC, TFT_RST);
 
-int interval = 60000;
+int interval = 15000;
 int lastRun = 0;
 
 void setBrightness(uint16_t lightInLux, bool isOff)
 {
-  if (lightInLux * 5.0f >= 4095)
+  if (lightInLux * 4.0f >= 4095)
   {
     lightInLux = 4095;
   }
   else
   {
-    lightInLux = lightInLux * 5.0f;
+    lightInLux = lightInLux * 4.0f;
   }
   if (!isOff && lightInLux <= 0)
   {
@@ -103,12 +106,18 @@ void setup()
   ledcSetup(MOTOR_CHANNEL, MOTOR_FREQ, MOTOR_RES);
   ledcAttachPin(MOTOR_PIN, MOTOR_CHANNEL);
 
+  tftSPI->begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS); // MOSI and SCLK pins for HSPI
+  tftSPI->setFrequency(SPI_FREQUENCY);
+  tftSPI->setDataMode(SPI_MODE0);
+  tftSPI->setBitOrder(MSBFIRST);
+
   tft.init(TFT_WIDTH, TFT_HEIGHT, 0, 0, ST7796S_BGR);
   tft.setSPISpeed(SPI_FREQUENCY);
   tft.setRotation(3);
   tft.sendCommand(ST77XX_INVOFF);
   tft.setTextColor(ST77XX_YELLOW);
   tft.setTextSize(4);
+  tft.fillScreen(ST77XX_BLACK);
 
   button->onEvent([]() { DEBUG_PRINTLN("Button pressed CONFIRMED"); });
   button->begin();
@@ -147,7 +156,6 @@ void loop()
     DEBUG_PRINTLN("");
     DEBUG_PRINTLN("Data collected:");
     state.flushData();
-    tft.fillScreen(ST77XX_BLACK);
     
     // get data from CO2 sensor
     SensorData *data = co2Sensor->getData();
@@ -185,27 +193,41 @@ void loop()
       DEBUG_PRINTLN("BH1750 No data available");
     }
     DEBUG_PRINTLN(state.toString());
+      unsigned long startRender = millis();
       char buffer[128];
       tft.setCursor(5, 10);
       sprintf(buffer, "CO2: %d ppm", state.getCO2());
+      tft.fillRect(5, 10, 340, 32, ST77XX_BLACK);
       tft.print(buffer);
+      //
       tft.setCursor(5, 60);
       sprintf(buffer, "Temp: %.1f C", state.getTemperature());
+      tft.fillRect(5, 60, 320, 32, ST77XX_BLACK);
       tft.print(buffer);
+      //
       tft.setCursor(5, 110);
       sprintf(buffer, "Humidity: %.1f %%", state.getHumidity());
+      tft.fillRect(5, 110, 430, 32, ST77XX_BLACK);
       tft.print(buffer);
+      //
+      tft.fillRect(5, 160, 470, 32, ST77XX_BLACK);
       tft.setCursor(5, 160);
       sprintf(buffer, "Pressure: %.1f hPa", state.getPressure());
       tft.print(buffer);
+      //
+      tft.fillRect(5, 210, 470, 36, ST77XX_BLACK);
       tft.setCursor(5, 210);
       sprintf(buffer, "Light: %.1f Lx", state.getLightLevel());
       tft.print(buffer);
+      //
+      int all =  millis() - time;
+      tft.fillRect(5, 260, 470, 32, ST77XX_BLACK);
       tft.setCursor(5, 260);
-      sprintf(buffer, "Interval: %d ms", millis() - time);
+      sprintf(buffer, "Interval: %d ms", all);
       tft.print(buffer);
-      tft.setCursor(5, 310);
-    DEBUG_PRINTLN("Loop time : " + String(millis() - time) + " ms");
+      //
+    DEBUG_PRINTLN("Loop time : " + String(all) + " ms");
+    DEBUG_PRINTLN("Render time : " + String(millis() - startRender) + " ms");
     lastRun = time;
     ledcWrite(MOTOR_CHANNEL, 0);
   }
