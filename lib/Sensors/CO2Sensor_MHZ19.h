@@ -1,4 +1,4 @@
-#pragma
+#pragma once
 
 #include "IDataSensor.h"
 #include <MHZ19.h>
@@ -14,7 +14,7 @@ private:
     int _txPin;
     int _rxPin;
     MHZ19 *_sensor;
-    CO2Data _data;
-    CO2Data _prevData;
+    CO2Data _data{};
+    CO2Data _prevData{};
 };
 

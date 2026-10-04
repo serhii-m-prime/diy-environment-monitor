@@ -71,7 +71,7 @@ SPIClass *tftSPI = new SPIClass(HSPI);
 // Створюємо об’єкт дисплея, передаючи посилання на tftSPI
 Adafruit_ST7796S tft(tftSPI, TFT_CS, TFT_DC, TFT_RST);
 
-int interval = 15000;
+int interval = 60000;
 int lastRun = 0;
 
 void setBrightness(uint16_t lightInLux, bool isOff)
@@ -146,7 +146,7 @@ void loop()
   button->update();
   pirSensor->update();
   // read loop
-  if (lastRun == 0 || time - lastRun > (interval - 10000))
+  if (lastRun == 0 || time - lastRun > (interval - 15000))
   {
     ledcWrite(MOTOR_CHANNEL, 142);
   }
@@ -155,7 +155,6 @@ void loop()
   {
     DEBUG_PRINTLN("");
     DEBUG_PRINTLN("Data collected:");
-    state.flushData();
     
     // get data from CO2 sensor
     SensorData *data = co2Sensor->getData();
@@ -165,6 +164,7 @@ void loop()
     }
     else
     {
+      state.invalidateCO2();
       DEBUG_PRINTLN("CO2 No data available");
     }
     // Get data from BME280 sensor
@@ -190,13 +190,17 @@ void loop()
     }
     else
     {
+      state.invalidateLightLevel();
       DEBUG_PRINTLN("BH1750 No data available");
     }
     DEBUG_PRINTLN(state.toString());
       unsigned long startRender = millis();
       char buffer[128];
       tft.setCursor(5, 10);
-      sprintf(buffer, "CO2: %d ppm", state.getCO2());
+      if (state.isCO2Valid())
+        sprintf(buffer, "CO2: %d ppm", state.getCO2());
+      else
+        sprintf(buffer, "CO2: N/A");
       tft.fillRect(5, 10, 340, 32, ST77XX_BLACK);
       tft.print(buffer);
       //
@@ -217,7 +221,10 @@ void loop()
       //
       tft.fillRect(5, 210, 470, 36, ST77XX_BLACK);
       tft.setCursor(5, 210);
-      sprintf(buffer, "Light: %.1f Lx", state.getLightLevel());
+      if (state.isLightLevelValid())
+        sprintf(buffer, "Light: %.1f Lx", state.getLightLevel());
+      else
+        sprintf(buffer, "Light: N/A");
       tft.print(buffer);
       //
       int all =  millis() - time;

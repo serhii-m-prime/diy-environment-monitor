@@ -25,6 +25,7 @@ public:
     {
         _co2 = co2Data->ppm;
         _co2LastUpdateTime = millis();
+        _co2Valid = true;
     }
     void fill(TempHumPressureData *tempHumPressData)
     {
@@ -39,11 +40,13 @@ public:
     {
         _lightLevel = lightSensorData->lux;
         _lightLevelLastUpdateTime = millis();
+        _lightLevelValid = true;
     }
     void setCO2(int co2)
     {
         _co2 = co2;
         _co2LastUpdateTime = millis();
+        _co2Valid = true;
     }
     void setTemperature(float temperature)
     {
@@ -64,7 +67,13 @@ public:
     {
         _lightLevel = lightLevel;
         _lightLevelLastUpdateTime = millis();
+        _lightLevelValid = true;
     }
+    bool isCO2Valid() const { return _co2Valid; }
+    bool isLightLevelValid() const { return _lightLevelValid; }
+    void invalidateCO2() { _co2Valid = false; }
+    // Keep the last good light level for brightness, including after PIR wakeup.
+    void invalidateLightLevel() { _lightLevelValid = false; }
     int getCO2() { return _co2; }
     float getTemperature() { return _temperature; }
     float getHumidity() { return _humidity; }
@@ -82,15 +91,15 @@ public:
     }
     bool isDataUpdated(int expiration_ms)
     {
-        return (millis() - _co2LastUpdateTime < expiration_ms) ||
+        return isCO2Actual(expiration_ms) ||
                (millis() - _temperatureLastUpdateTime < expiration_ms) ||
                (millis() - _humidityLastUpdateTime < expiration_ms) ||
                (millis() - _pressureLastUpdateTime < expiration_ms) ||
-               (millis() - _lightLevelLastUpdateTime < expiration_ms);
+               isLightLevelActual(expiration_ms);
     }
     bool isCO2Actual(int expiration_ms)
     {
-        return (millis() - _co2LastUpdateTime < expiration_ms);
+        return _co2Valid && (millis() - _co2LastUpdateTime < expiration_ms);
     }
     bool isTemperatureActual(int expiration_ms)
     {
@@ -106,7 +115,7 @@ public:
     }
     bool isLightLevelActual(int expiration_ms)
     {
-        return (millis() - _lightLevelLastUpdateTime < expiration_ms);
+        return _lightLevelValid && (millis() - _lightLevelLastUpdateTime < expiration_ms);
     }
 
     void setNextPage()
@@ -120,6 +129,8 @@ public:
 
     void flushData()
     {
+        invalidateCO2();
+        invalidateLightLevel();
         _co2 = 0;
         _temperature = 0.0;
         _humidity = 0.0;
@@ -128,16 +139,28 @@ public:
     }
 
     String toString() const {
+    char co2[24];
+    char light[32];
+    if (_co2Valid)
+        std::snprintf(co2, sizeof(co2), "%d ppm", _co2);
+    else
+        std::snprintf(co2, sizeof(co2), "N/A");
+    if (_lightLevelValid)
+        std::snprintf(light, sizeof(light), "%.2f lx", _lightLevel);
+    else
+        std::snprintf(light, sizeof(light), "N/A");
     char buf[128];
     std::snprintf(buf, sizeof(buf),
-        "CO2: %u ppm, Temperature: %.2f °C, Humidity: %.2f %%, "
-        "Pressure: %.2f hPa, Light Level: %.2f lx",
-        _co2, _temperature, _humidity, _pressure, _lightLevel);
+        "CO2: %s, Temperature: %.2f °C, Humidity: %.2f %%, "
+        "Pressure: %.2f hPa, Light Level: %s",
+        co2, _temperature, _humidity, _pressure, light);
     return String(buf);
 }
 
 
 private:
+    bool _co2Valid = false;
+    bool _lightLevelValid = false;
     int _co2;
     unsigned long _co2LastUpdateTime;
     float _temperature;

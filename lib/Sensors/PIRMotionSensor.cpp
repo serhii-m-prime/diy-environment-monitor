@@ -38,14 +38,6 @@ void PIRMotionSensor::update()
     int reading = digitalRead(_pin);
     if (reading != _lastState)
     {
-        if (reading == HIGH && _startCallback)
-        {
-            _startCallback();
-        }
-        else if (reading == LOW && _endCallback)
-        {
-            _endCallback();
-        }
         _lastDebounceTime = millis();
         _lastState = reading;
     }
@@ -54,9 +46,20 @@ void PIRMotionSensor::update()
         if (_currentState != reading)
         {
             _currentState = reading;
-            if (_currentState == HIGH && _callback)
+            if (_currentState == HIGH)
             {
-                _callback();
+                if (_startCallback)
+                {
+                    _startCallback();
+                }
+                if (_callback)
+                {
+                    _callback();
+                }
+            }
+            else if (_endCallback)
+            {
+                _endCallback();
             }
         }
     }

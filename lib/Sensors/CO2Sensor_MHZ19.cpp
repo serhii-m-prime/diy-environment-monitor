@@ -31,9 +31,20 @@ void CO2Sensor_MHZ19::begin()
  */
 SensorData* CO2Sensor_MHZ19::getData()
 {
+    const int ppm = _sensor->getCO2();
+    // Each request overwrites errorCode; check before requesting temperature.
+    if (_sensor->errorCode != RESULT_OK)
+    {
+        return nullptr;
+    }
+    const float temperature = _sensor->getTemperature();
+    if (_sensor->errorCode != RESULT_OK)
+    {
+        return nullptr;
+    }
     _prevData = _data;
-    _data.ppm = _sensor->getCO2();
-    _data.temperature = _sensor->getTemperature();
+    _data.ppm = ppm;
+    _data.temperature = temperature;
     return &_data;
 }
 

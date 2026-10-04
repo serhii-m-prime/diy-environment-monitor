@@ -1,6 +1,7 @@
 #include <LightSensor_BH1750.h>
 #include <BH1750.h>
 #include <Debug.h>
+#include <cmath>
 
 /**
  * @brief BH1750 light sensor
@@ -31,8 +32,12 @@ void LightSensor_BH1750::begin()
 SensorData *LightSensor_BH1750::getData()
 {
     if (_sensor->measurementReady()) {
+        const float lux = _sensor->readLightLevel();
+        if (!std::isfinite(lux) || lux < 0.0f) {
+            return nullptr;
+        }
         _prevData = _data;
-        _data.lux = _sensor->readLightLevel();
+        _data.lux = lux;
         return &_data;
     }
     return nullptr;
