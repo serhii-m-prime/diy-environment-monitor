@@ -10,6 +10,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Host test compilation failed' }
     & ./.pio/host-tests/sensor_regressions.exe
     if ($LASTEXITCODE -ne 0) { throw 'Sensor regression tests failed' }
+    & $Cxx -std=c++17 -Wall -Wextra -Ilib/App test/host/monitor_tests.cpp `
+        -o .pio/host-tests/monitor_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Monitor test compilation failed' }
+    & ./.pio/host-tests/monitor_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Monitor tests failed' }
 } finally {
     Pop-Location
 }

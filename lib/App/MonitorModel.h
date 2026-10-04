@@ -1,0 +1,131 @@
+#pragma once
+
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+
+namespace monitor {
+
+constexpr uint32_t SamplePeriodMs = 60000;
+constexpr uint32_t HistoryHours = 6;
+constexpr uint32_t HistorySeconds = HistoryHours * 3600;
+constexpr size_t HistoryCapacity = HistorySeconds / (SamplePeriodMs / 1000) + 1;
+
+enum Valid : uint8_t { Environment = 1, CO2 = 2, Light = 4 };
+enum class Page : uint8_t { Overview, Temperature, Humidity, CO2, Light, Service, Count };
+enum class Metric : uint8_t { Temperature, Humidity, CO2, Light };
+
+struct Readings {
+    float temperature = 0;
+    float humidity = 0;
+    float pressure = 0;
+    float light = 0;
+    int co2 = 0;
+    uint8_t valid = 0;
+};
+
+// Fixed-point samples keep six hours in internal RAM without a framebuffer or PSRAM.
+struct HistoryPoint {
+    uint32_t seconds = 0;
+    int16_t temperature = 0; // hundredths of a degree C
+    uint16_t humidity = 0; // hundredths of percent
+    uint16_t co2 = 0;
+    uint16_t light = 0; // lux
+    uint8_t valid = 0;
+
+    bool value(Metric metric, float &out) const {
+        switch (metric) {
+        case Metric::Temperature: out = temperature / 100.0f; return valid & Environment;
+        case Metric::Humidity: out = humidity / 100.0f; return valid & Environment;
+        case Metric::CO2: out = co2; return valid & CO2;
+        case Metric::Light: out = light; return valid & Light;
+        }
+        return false;
+    }
+
+    static HistoryPoint from(uint32_t seconds, const Readings &r) {
+        HistoryPoint p;
+        p.seconds = seconds;
+        if ((r.valid & Environment) && std::isfinite(r.temperature) &&
+            r.temperature >= -40 && r.temperature <= 85 &&
+            std::isfinite(r.humidity) && r.humidity >= 0 && r.humidity <= 100) {
+            p.temperature = static_cast<int16_t>(std::lround(r.temperature * 100));
+            p.humidity = static_cast<uint16_t>(std::lround(r.humidity * 100));
+            p.valid |= Environment;
+        }
+        if ((r.valid & CO2) && r.co2 >= 0 && r.co2 <= 65535) {
+            p.co2 = static_cast<uint16_t>(r.co2);
+            p.valid |= CO2;
+        }
+        if ((r.valid & Light) && std::isfinite(r.light) && r.light >= 0 && r.light <= 65535) {
+            p.light = static_cast<uint16_t>(std::lround(r.light));
+            p.valid |= Light;
+        }
+        return p;
+    }
+};
+static_assert(sizeof(HistoryPoint) <= 16, "History sample exceeds RAM budget");
+
+class History {
+public:
+    void append(const HistoryPoint &point) {
+        points_[next_] = point;
+        next_ = (next_ + 1) % HistoryCapacity;
+        if (size_ < HistoryCapacity) ++size_;
+    }
+    size_t size() const { return size_; }
+    const HistoryPoint &at(size_t chronologicalIndex) const {
+        return points_[(next_ + HistoryCapacity - size_ + chronologicalIndex) % HistoryCapacity];
+    }
+private:
+    HistoryPoint points_[HistoryCapacity]{};
+    size_t next_ = 0;
+    size_t size_ = 0;
+};
+
+// Extend millis() across its 49-day wrap. Tick at least once per millis() period.
+class Uptime {
+public:
+    void tick(uint32_t nowMs) {
+        milliseconds_ += static_cast<uint32_t>(nowMs - previousMs_);
+        previousMs_ = nowMs;
+    }
+    uint32_t seconds() const { return static_cast<uint32_t>(milliseconds_ / 1000); }
+private:
+    uint64_t milliseconds_ = 0;
+    uint32_t previousMs_ = 0;
+};
+
+class Navigation {
+public:
+    Page page() const { return page_; }
+    void move(int steps) {
+        constexpr int count = static_cast<int>(Page::Count);
+        page_ = static_cast<Page>((static_cast<int>(page_) + steps % count + count) % count);
+        dirty_ = true;
+    }
+    void setOn(bool on) {
+        if (on && !on_) dirty_ = true;
+        on_ = on;
+    }
+    bool isOn() const { return on_; }
+    void invalidate() { dirty_ = true; }
+    bool needsRender() const { return on_ && dirty_; }
+    void rendered() { dirty_ = false; }
+private:
+    Page page_ = Page::Overview;
+    bool on_ = false;
+    bool dirty_ = true;
+};
+
+struct Diagnostics {
+    uint32_t renderUs = 0, maxRenderUs = 0, renders = 0;
+    uint32_t loopUs = 0, maxLoopUs = 0;
+    uint32_t sensorUs = 0, sampleAgeSeconds = 0;
+    uint32_t freeHeap = 0, minHeap = 0, uptimeSeconds = 0;
+    uint32_t sensorErrors = 0;
+    uint16_t brightness = 0;
+    bool fanOn = false, motion = false;
+};
+
+} // namespace monitor
