@@ -1,4 +1,5 @@
 #include <MonitorModel.h>
+#include <MeasurementGuidance.h>
 #include <cassert>
 #include <cstdio>
 #include <limits>
@@ -6,6 +7,40 @@
 using namespace monitor;
 
 int main() {
+    // Exact boundaries and both sides are intentional; sources do not define
+    // symmetric traffic-light bands (e.g. no arbitrary red low-humidity limit).
+    struct Case { Metric metric; float value; Guidance expected; };
+    const Case cases[] = {
+        {Metric::Temperature, 17.99f, Guidance::Attention},
+        {Metric::Temperature, 18, Guidance::Reference},
+        {Metric::Temperature, 24, Guidance::Reference},
+        {Metric::Temperature, 24.01f, Guidance::Watch},
+        {Metric::Temperature, 26, Guidance::Watch},
+        {Metric::Temperature, 26.01f, Guidance::Attention},
+        {Metric::Humidity, 0, Guidance::Watch},
+        {Metric::Humidity, 29.99f, Guidance::Watch},
+        {Metric::Humidity, 30, Guidance::Reference},
+        {Metric::Humidity, 50, Guidance::Reference},
+        {Metric::Humidity, 50.01f, Guidance::Watch},
+        {Metric::Humidity, 59.99f, Guidance::Watch},
+        {Metric::Humidity, 60, Guidance::Attention},
+        {Metric::Humidity, 100, Guidance::Attention},
+        {Metric::Humidity, 101, Guidance::Unavailable},
+        {Metric::CO2, -1, Guidance::Unavailable},
+        {Metric::CO2, 1000, Guidance::Reference},
+        {Metric::CO2, 1001, Guidance::Watch},
+        {Metric::CO2, 1500, Guidance::Watch},
+        {Metric::CO2, 1501, Guidance::Attention},
+        {Metric::Pressure, 600, Guidance::Neutral},
+        {Metric::Pressure, 760, Guidance::Neutral},
+        {Metric::Pressure, 825, Guidance::Neutral},
+        {Metric::Light, 0, Guidance::Neutral}
+    };
+    for (const auto &c : cases) assert(measurementGuidance(c.metric, c.value) == c.expected);
+    for (Metric m : {Metric::Temperature, Metric::Humidity, Metric::CO2, Metric::Light, Metric::Pressure}) {
+        assert(measurementGuidance(m, std::numeric_limits<float>::quiet_NaN()) == Guidance::Unavailable);
+        assert(measurementGuidance(m, std::numeric_limits<float>::infinity()) == Guidance::Unavailable);
+    }
     Readings r;
     r.temperature = -12.34f; r.humidity = 56.78f;
     r.co2 = 1234; r.light = 4321; r.valid = Environment | CO2 | Light;
@@ -79,5 +114,5 @@ int main() {
     assert(!schedule.due(75099) && schedule.due(75100));
     schedule.sampled(0xfffffff0U);
     assert(!schedule.due(1000) && schedule.due(60000));
-    std::printf("PASS: history encoding, ring wrap, navigation, display gating, uptime wrap (%zu bytes history)\n", sizeof(History));
+    std::printf("PASS: guidance boundaries, history encoding, ring wrap, navigation, display gating, uptime wrap (%zu bytes history)\n", sizeof(History));
 }
