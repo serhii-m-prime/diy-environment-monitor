@@ -11,6 +11,7 @@ ESP32-S3 + ST7796S (480 x 320 landscape), MH-Z19, BME280, BH1750 and PIR.
 - The old GPIO19 test button is no longer configured or used.
 - Screen order: environment overview, temperature, humidity, CO2, ambient light,
   service diagnostics. Labels use the built-in ASCII bitmap font.
+- The overview shows pressure in both hPa and mmHg (millimetres of mercury).
 
 The display is initially visible for 30 seconds. PIR motion keeps it on; a button
 press wakes it and changes the page. After motion ends or the last button press,

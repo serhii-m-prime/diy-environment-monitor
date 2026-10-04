@@ -86,7 +86,9 @@ private:
         if (force || (changes & Environment) || r.pressure != previous_.pressure) {
             canvas_.fillRect(12, 262, 456, 24, Background);
             char buffer[40];
-            if (r.valid & Environment) std::snprintf(buffer, sizeof(buffer), "Pressure  %.1f hPa", r.pressure);
+            // 1 mmHg = 133.322387415 Pa; pressure is stored in hPa.
+            if (r.valid & Environment) std::snprintf(buffer, sizeof(buffer), "Pressure %.1f hPa / %.1f mmHg",
+                                                   r.pressure, r.pressure * 0.750061683f);
             else std::snprintf(buffer, sizeof(buffer), "Pressure  N/A");
             text(16, 266, buffer, 2, Muted);
         }
