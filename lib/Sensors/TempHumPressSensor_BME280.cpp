@@ -1,6 +1,7 @@
 #include <TempHumPressSensor_BME280.h>
 #include <Adafruit_BME280.h>
 #include <Debug.h>
+#include <cmath>
 
 TempHumPressSensor_BME280::TempHumPressSensor_BME280(int address)
 {
@@ -18,11 +19,11 @@ TempHumPressSensor_BME280::TempHumPressSensor_BME280(int address)
  */
 void TempHumPressSensor_BME280::begin()
 {
-    if (!_sensor->begin(_address))
+    _initialized = _sensor->begin(_address);
+    if (!_initialized)
     {
         DEBUG_PRINTLN("Could not find a valid BME280 sensor, check wiring!");
-        while (1)
-            ;
+        return;
     }
     _sensor->setSampling(
         Adafruit_BME280::MODE_FORCED,
@@ -41,11 +42,17 @@ void TempHumPressSensor_BME280::begin()
  */
 SensorData *TempHumPressSensor_BME280::getData()
 {
+    if (!_initialized || !_sensor->takeForcedMeasurement()) return nullptr;
+    const float temperature = _sensor->readTemperature();
+    const float humidity = _sensor->readHumidity();
+    const float pressure = _sensor->readPressure() / 100.0F;
+    if (!std::isfinite(temperature) || temperature < -40 || temperature > 85 ||
+        !std::isfinite(humidity) || humidity < 0 || humidity > 100 ||
+        !std::isfinite(pressure) || pressure < 300 || pressure > 1100) return nullptr;
     _prevData = _data;
-    _sensor->takeForcedMeasurement();
-    _data.temperature = _sensor->readTemperature();
-    _data.humidity = _sensor->readHumidity();
-    _data.pressure = _sensor->readPressure() / 100.0F; // Convert to hPa
+    _data.temperature = temperature;
+    _data.humidity = humidity;
+    _data.pressure = pressure;
     return &_data;
 }
 

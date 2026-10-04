@@ -128,4 +128,46 @@ struct Diagnostics {
     bool fanOn = false, motion = false;
 };
 
+struct InputSnapshot {
+    uint32_t leftPresses = 0, rightPresses = 0;
+    bool motion = false;
+};
+
+// The latest minute sample remains present through intervening light updates.
+struct SensorSnapshot {
+    Readings readings;
+    HistoryPoint historyPoint;
+    uint32_t historySequence = 0, measurementUs = 0, errors = 0;
+    bool lightSeen = false, fanOn = false;
+};
+
+class DisplayActivity {
+public:
+    static constexpr uint32_t TimeoutMs = 30000;
+    bool update(uint32_t now, bool motion, bool buttonPressed) {
+        if (motion || buttonPressed) { lastActivity_ = now; active_ = true; }
+        if (active_ && uint32_t(now - lastActivity_) >= TimeoutMs) active_ = false;
+        return active_;
+    }
+private:
+    uint32_t lastActivity_ = 0;
+    bool active_ = true; // show the overview for 30 seconds after boot
+};
+
+class SampleSchedule {
+public:
+    static constexpr uint32_t FanLeadMs = 15000;
+    explicit SampleSchedule(uint32_t now) : lastSample_(now) {}
+    bool fanNeeded(uint32_t now) const {
+        return first_ || uint32_t(now - lastSample_) >= SamplePeriodMs - FanLeadMs;
+    }
+    bool due(uint32_t now) const {
+        return uint32_t(now - lastSample_) >= (first_ ? FanLeadMs : SamplePeriodMs);
+    }
+    void sampled(uint32_t started) { lastSample_ = started; first_ = false; }
+private:
+    uint32_t lastSample_;
+    bool first_ = true;
+};
+
 } // namespace monitor

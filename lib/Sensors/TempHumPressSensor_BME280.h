@@ -13,6 +13,7 @@ public:
     SensorData *getPrevData() override;
 
 private:
+    bool _initialized = false;
     int _address;
     Adafruit_BME280 *_sensor;
     TempHumPressureData _data;

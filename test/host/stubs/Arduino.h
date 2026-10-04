@@ -7,6 +7,7 @@ using String = std::string;
 constexpr int LOW = 0;
 constexpr int HIGH = 1;
 constexpr int INPUT = 0;
+constexpr int INPUT_PULLUP = 1;
 constexpr int SERIAL_8N1 = 0;
 extern unsigned long testTime;
 extern int testPin;

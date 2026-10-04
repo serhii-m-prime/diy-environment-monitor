@@ -1,243 +1,229 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <SPI.h>
+#include <Adafruit_ST7796S.h>
 #include <Debug.h>
-#include <IEventSensor.h>
-#include <IDataSensor.h>
 #include <GPIOButton.h>
 #include <PIRMotionSensor.h>
 #include <CO2Sensor_MHZ19.h>
 #include <TempHumPressSensor_BME280.h>
 #include <LightSensor_BH1750.h>
-#include <State.h>
-#include <SPI.h>
-#include <Adafruit_ST7796S.h>
+#include <MonitorUi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 
-// Pin definitions
-#define PIN_BUILT_IN_LED 2
-#define PIN_BTN_DS_CONTROL 19
-#define PIN_PIR_SENSOR 4
+using namespace monitor;
 
-// All I2C sensors pins
-#define PIN_I2C_SDA 41
-#define PIN_I2C_SCL 40
-#define BME280_ADDRESS 0x76
-#define BH1750_ADDRESS 0x23
+namespace {
+constexpr int LeftPin = 7, RightPin = 14, PirPin = 4;
+constexpr int SdaPin = 41, SclPin = 40, EnvironmentAddress = 0x76;
+constexpr int Co2TxPin = 18, Co2RxPin = 17;
+constexpr int TftCs = 10, TftDc = 9, TftReset = 15, TftMosi = 11, TftClock = 12;
+constexpr int BacklightPin = 5, BacklightChannel = 0;
+constexpr int FanPin = 6, FanChannel = 1;
+constexpr uint32_t SpiFrequency = 80000000;
+constexpr uint32_t LightPeriodMs = 1000, LightRetryMs = 30000;
 
-// CO2 sensor UART pins
-#define PIN_CO2_UART_TX 18
-#define PIN_CO2_UART_RX 17
+SPIClass displaySpi(HSPI);
+Adafruit_ST7796S display(&displaySpi, TftCs, TftDc, TftReset);
+MonitorUi<Adafruit_ST7796S> ui(display);
+Navigation navigation;
+History history;
+Uptime uptime;
+DisplayActivity activity;
+Diagnostics diagnostics;
+InputSnapshot inputs;
+SensorSnapshot sensors;
+QueueHandle_t inputMailbox = nullptr, sensorMailbox = nullptr;
 
-// Display settings
-// #define ST7796_DRIVER
-#define TFT_WIDTH 320
-#define TFT_HEIGHT 480
-
-#define TFT_CS 10
-#define TFT_RST 15
-#define TFT_DC 9
-#define TFT_MOSI 11
-#define TFT_SCLK 12
-
-#define TFT_LED 5
-
-#define TFT_LED_CHANNEL 0
-#define TFT_LED_FREQ 5000
-#define TFT_LED_RES 12
-
-#define LOAD_GLCD
-#define LOAD_FONT2
-#define LOAD_FONT4
-#define LOAD_GFXFF
-
-#define SPI_FREQUENCY 80000000
-
-// cooler definitions
-#define MOTOR_PIN 6
-#define MOTOR_CHANNEL 1
-#define MOTOR_FREQ 5000
-#define MOTOR_RES 8
-
-State state;
-
-IEventSensor *button = new GPIOButton(PIN_BTN_DS_CONTROL);
-IEventSensor *pirSensor = new PIRMotionSensor(PIN_PIR_SENSOR);
-
-IDataSensor *co2Sensor = new CO2Sensor_MHZ19(PIN_CO2_UART_TX, PIN_CO2_UART_RX);
-IDataSensor *envSensor = new TempHumPressSensor_BME280(BME280_ADDRESS);
-IDataSensor *lightSensor = new LightSensor_BH1750();
-
-// Створюємо окремий об’єкт SPI на HSPI
-SPIClass *tftSPI = new SPIClass(HSPI);
-// Створюємо об’єкт дисплея, передаючи посилання на tftSPI
-Adafruit_ST7796S tft(tftSPI, TFT_CS, TFT_DC, TFT_RST);
-
-int interval = 60000;
-int lastRun = 0;
-
-void setBrightness(uint16_t lightInLux, bool isOff)
-{
-  if (lightInLux * 4.0f >= 4095)
-  {
-    lightInLux = 4095;
-  }
-  else
-  {
-    lightInLux = lightInLux * 4.0f;
-  }
-  if (!isOff && lightInLux <= 0)
-  {
-    lightInLux = 3;
-  }
-  ledcWrite(TFT_LED_CHANNEL, lightInLux);
+// No callbacks in this task touch the display or shared application state.
+void inputTask(void *) {
+    GPIOButton left(LeftPin), right(RightPin);
+    PIRMotionSensor pir(PirPin);
+    InputSnapshot snapshot;
+    left.onEvent([&] { ++snapshot.leftPresses; });
+    right.onEvent([&] { ++snapshot.rightPresses; });
+    pir.onEvent([&] { snapshot.motion = true; });
+    pir.onEventEnd([&] { snapshot.motion = false; });
+    left.begin(); right.begin(); pir.begin();
+    pir.setDebounceDelay(20);
+    TickType_t wake = xTaskGetTickCount();
+    for (;;) {
+        left.update(); right.update(); pir.update();
+        // Counters survive an overwritten snapshot while TFT is busy.
+        xQueueOverwrite(inputMailbox, &snapshot);
+        vTaskDelayUntil(&wake, pdMS_TO_TICKS(10));
+    }
 }
 
-void setup()
-{
-  DEBUG_BEGIN(115200);
-  DEBUG_PRINTLN("Starting...");
-  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-#ifdef DEBUG_ENABLED
-  I2CScan();
-#endif
+// Sole owner of Wire, Serial2 and sensor objects. Slow I/O cannot block buttons/UI.
+void sensorTask(void *) {
+    CO2Sensor_MHZ19 co2(Co2TxPin, Co2RxPin);
+    TempHumPressSensor_BME280 environment(EnvironmentAddress);
+    LightSensor_BH1750 light;
+    SensorSnapshot snapshot;
+    Wire.begin(SdaPin, SclPin);
+    Wire.setTimeOut(50);
+    co2.begin(); environment.begin(); light.begin();
+    Uptime sensorUptime;
+    SampleSchedule schedule(millis());
+    uint32_t lastLight = millis() - LightPeriodMs;
+    uint32_t lastLightRetry = millis();
+    bool environmentHealthy = true;
 
-  ledcSetup(TFT_LED_CHANNEL, TFT_LED_FREQ, TFT_LED_RES);
-  ledcAttachPin(TFT_LED, TFT_LED_CHANNEL);
-
-  ledcSetup(MOTOR_CHANNEL, MOTOR_FREQ, MOTOR_RES);
-  ledcAttachPin(MOTOR_PIN, MOTOR_CHANNEL);
-
-  tftSPI->begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS); // MOSI and SCLK pins for HSPI
-  tftSPI->setFrequency(SPI_FREQUENCY);
-  tftSPI->setDataMode(SPI_MODE0);
-  tftSPI->setBitOrder(MSBFIRST);
-
-  tft.init(TFT_WIDTH, TFT_HEIGHT, 0, 0, ST7796S_BGR);
-  tft.setSPISpeed(SPI_FREQUENCY);
-  tft.setRotation(3);
-  tft.sendCommand(ST77XX_INVOFF);
-  tft.setTextColor(ST77XX_YELLOW);
-  tft.setTextSize(4);
-  tft.fillScreen(ST77XX_BLACK);
-
-  button->onEvent([]() { DEBUG_PRINTLN("Button pressed CONFIRMED"); });
-  button->begin();
-  pirSensor->onEvent([]()
-                     {
-                 DEBUG_PRINTLN("Motion CONFIRMED");
-                 setBrightness((uint16_t)state.getLightLevel(), false); 
-                 tft.sendCommand(ST77XX_DISPON);
-                 state.setDisplayOn(true); });
-  pirSensor->onEventEnd([]()
-                        {
-     DEBUG_PRINTLN("Motion ENDED"); 
-                    tft.sendCommand(ST77XX_DISPOFF);
-                    setBrightness(0, true);
-                    state.setDisplayOn(false); });
-  pirSensor->setDebounceDelay(20);
-  pirSensor->begin();
-  co2Sensor->begin();
-  envSensor->begin();
-  lightSensor->begin();
+    for (;;) {
+        const uint32_t now = millis();
+        sensorUptime.tick(now);
+        bool publish = false;
+        const bool fan = schedule.fanNeeded(now);
+        if (fan != snapshot.fanOn) {
+            snapshot.fanOn = fan;
+            ledcWrite(FanChannel, fan ? 142 : 0);
+            publish = true;
+        }
+        const bool sampleDue = schedule.due(now);
+        if (sampleDue) {
+            const uint32_t started = micros();
+            if (!environmentHealthy) environment.begin();
+            snapshot.readings.valid &= ~(Environment | CO2);
+            if (auto data = static_cast<CO2Data *>(co2.getData())) {
+                snapshot.readings.co2 = data->ppm;
+                snapshot.readings.valid |= CO2;
+            } else ++snapshot.errors;
+            if (auto data = static_cast<TempHumPressureData *>(environment.getData())) {
+                snapshot.readings.temperature = data->temperature;
+                snapshot.readings.humidity = data->humidity;
+                snapshot.readings.pressure = data->pressure;
+                snapshot.readings.valid |= Environment;
+                environmentHealthy = true;
+            } else {
+                environmentHealthy = false;
+                ++snapshot.errors;
+            }
+            snapshot.measurementUs = micros() - started;
+        }
+        if (sampleDue || uint32_t(now - lastLight) >= LightPeriodMs) {
+            lastLight = now;
+            if (!(snapshot.readings.valid & Light) && uint32_t(now - lastLightRetry) >= LightRetryMs) {
+                light.begin();
+                lastLightRetry = now;
+            }
+            snapshot.readings.valid &= ~Light;
+            if (auto data = static_cast<LightData *>(light.getData())) {
+                snapshot.readings.light = data->lux;
+                snapshot.readings.valid |= Light;
+                snapshot.lightSeen = true;
+            } else ++snapshot.errors;
+            publish = true;
+        }
+        if (sampleDue) {
+            sensorUptime.tick(millis());
+            snapshot.historyPoint = HistoryPoint::from(sensorUptime.seconds(), snapshot.readings);
+            ++snapshot.historySequence;
+            schedule.sampled(now);
+            snapshot.fanOn = false;
+            ledcWrite(FanChannel, 0);
+            publish = true;
+        }
+        if (publish) xQueueOverwrite(sensorMailbox, &snapshot);
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
 }
 
-void loop()
-{
-  long time = millis();
-  button->update();
-  pirSensor->update();
-  // read loop
-  if (lastRun == 0 || time - lastRun > (interval - 15000))
-  {
-    ledcWrite(MOTOR_CHANNEL, 142);
-  }
+uint16_t brightness() {
+    if (!navigation.isOn()) return 0;
+    // Before the first valid light sample use a modest, readable fixed brightness.
+    const float lux = sensors.lightSeen ? sensors.readings.light : 60.0f;
+    return static_cast<uint16_t>(std::max(3.0f, std::min(4095.0f, lux * 4.0f)));
+}
+} // namespace
 
-  if (lastRun == 0 || time - lastRun > interval)
-  {
-    DEBUG_PRINTLN("");
-    DEBUG_PRINTLN("Data collected:");
-    
-    // get data from CO2 sensor
-    SensorData *data = co2Sensor->getData();
-    if (CO2Data *co2Data = static_cast<CO2Data *>(data))
-    {
-      state.fill(co2Data);
-    }
-    else
-    {
-      state.invalidateCO2();
-      DEBUG_PRINTLN("CO2 No data available");
-    }
-    // Get data from BME280 sensor
-    SensorData *bmeData = envSensor->getData();
-    if (TempHumPressureData *bmeDataPtr = static_cast<TempHumPressureData *>(bmeData))
-    {
-      state.fill(bmeDataPtr);
-      
-    }
-    else
-    {
-      DEBUG_PRINTLN("BME280 No data available");
-    }
-    // Get data from BH1750 sensor
-    SensorData *bhData = lightSensor->getData();
-    if (LightData *bhDataPtr = static_cast<LightData *>(bhData))
-    {
-      state.fill(bhDataPtr);
-      if (state.isDisplayOn())
-      {
-        setBrightness((uint16_t)state.getLightLevel(), false);
-      }
-    }
-    else
-    {
-      state.invalidateLightLevel();
-      DEBUG_PRINTLN("BH1750 No data available");
-    }
-    DEBUG_PRINTLN(state.toString());
-      unsigned long startRender = millis();
-      char buffer[128];
-      tft.setCursor(5, 10);
-      if (state.isCO2Valid())
-        sprintf(buffer, "CO2: %d ppm", state.getCO2());
-      else
-        sprintf(buffer, "CO2: N/A");
-      tft.fillRect(5, 10, 340, 32, ST77XX_BLACK);
-      tft.print(buffer);
-      //
-      tft.setCursor(5, 60);
-      sprintf(buffer, "Temp: %.1f C", state.getTemperature());
-      tft.fillRect(5, 60, 320, 32, ST77XX_BLACK);
-      tft.print(buffer);
-      //
-      tft.setCursor(5, 110);
-      sprintf(buffer, "Humidity: %.1f %%", state.getHumidity());
-      tft.fillRect(5, 110, 430, 32, ST77XX_BLACK);
-      tft.print(buffer);
-      //
-      tft.fillRect(5, 160, 470, 32, ST77XX_BLACK);
-      tft.setCursor(5, 160);
-      sprintf(buffer, "Pressure: %.1f hPa", state.getPressure());
-      tft.print(buffer);
-      //
-      tft.fillRect(5, 210, 470, 36, ST77XX_BLACK);
-      tft.setCursor(5, 210);
-      if (state.isLightLevelValid())
-        sprintf(buffer, "Light: %.1f Lx", state.getLightLevel());
-      else
-        sprintf(buffer, "Light: N/A");
-      tft.print(buffer);
-      //
-      int all =  millis() - time;
-      tft.fillRect(5, 260, 470, 32, ST77XX_BLACK);
-      tft.setCursor(5, 260);
-      sprintf(buffer, "Interval: %d ms", all);
-      tft.print(buffer);
-      //
-    DEBUG_PRINTLN("Loop time : " + String(all) + " ms");
-    DEBUG_PRINTLN("Render time : " + String(millis() - startRender) + " ms");
-    lastRun = time;
-    ledcWrite(MOTOR_CHANNEL, 0);
-  }
+void setup() {
+    DEBUG_BEGIN(115200);
+    ledcSetup(BacklightChannel, 5000, 12);
+    ledcAttachPin(BacklightPin, BacklightChannel);
+    ledcWrite(BacklightChannel, 0);
+    ledcSetup(FanChannel, 5000, 8);
+    ledcAttachPin(FanPin, FanChannel);
+    ledcWrite(FanChannel, 0);
+    displaySpi.begin(TftClock, -1, TftMosi, TftCs);
+    display.init(320, 480, 0, 0, ST7796S_BGR);
+    display.setSPISpeed(SpiFrequency);
+    display.setRotation(3);
+    display.sendCommand(ST77XX_INVOFF);
+    display.sendCommand(ST77XX_DISPOFF);
 
-  delay(10); // Let CPU rest
+    inputMailbox = xQueueCreate(1, sizeof(InputSnapshot));
+    sensorMailbox = xQueueCreate(1, sizeof(SensorSnapshot));
+    if (!inputMailbox || !sensorMailbox) abort();
+    // ESP-IDF task stack sizes are bytes. No task allocates a framebuffer.
+    if (xTaskCreatePinnedToCore(inputTask, "buttons", 3072, nullptr, 2, nullptr, 0) != pdPASS) abort();
+    if (xTaskCreatePinnedToCore(sensorTask, "sensors", 4096, nullptr, 1, nullptr, 0) != pdPASS) abort();
+}
+
+void loop() {
+    static uint32_t lastLoopUs = micros(), lastServiceMs = 0;
+    const uint32_t loopStart = micros();
+    diagnostics.loopUs = loopStart - lastLoopUs; // complete cycle, including render and delay
+    diagnostics.maxLoopUs = std::max(diagnostics.maxLoopUs, diagnostics.loopUs);
+    lastLoopUs = loopStart;
+    const uint32_t now = millis();
+    uptime.tick(now);
+
+    bool pressed = false;
+    InputSnapshot nextInput;
+    if (xQueueReceive(inputMailbox, &nextInput, 0) == pdTRUE) {
+        const uint32_t left = nextInput.leftPresses - inputs.leftPresses;
+        const uint32_t right = nextInput.rightPresses - inputs.rightPresses;
+        pressed = left || right;
+        if (pressed) navigation.move(static_cast<int>(right % 6) - static_cast<int>(left % 6));
+        inputs = nextInput;
+    }
+    SensorSnapshot nextSensor;
+    if (xQueueReceive(sensorMailbox, &nextSensor, 0) == pdTRUE) {
+        if (nextSensor.historySequence != sensors.historySequence) {
+            history.append(nextSensor.historyPoint);
+            navigation.invalidate();
+        }
+        if (navigation.page() == Page::Overview ||
+            (navigation.page() == Page::Light && ((nextSensor.readings.valid ^ sensors.readings.valid) & Light)))
+            navigation.invalidate();
+        sensors = nextSensor;
+    }
+
+    const bool on = activity.update(now, inputs.motion, pressed);
+    if (on != navigation.isOn()) {
+        if (!on) ledcWrite(BacklightChannel, 0);
+        display.sendCommand(on ? ST77XX_DISPON : ST77XX_DISPOFF);
+        navigation.setOn(on);
+    }
+    if (navigation.isOn() && navigation.page() == Page::Service && uint32_t(now - lastServiceMs) >= 1000) {
+        navigation.invalidate();
+        lastServiceMs = now;
+    }
+    // A worker can publish across a second boundary after this loop's first tick.
+    uptime.tick(millis());
+    diagnostics.motion = inputs.motion;
+    diagnostics.fanOn = sensors.fanOn;
+    diagnostics.brightness = brightness();
+    diagnostics.sensorUs = sensors.measurementUs;
+    diagnostics.sensorErrors = sensors.errors;
+    diagnostics.uptimeSeconds = uptime.seconds();
+    diagnostics.sampleAgeSeconds = history.size() ? uptime.seconds() - sensors.historyPoint.seconds : 0;
+    if (navigation.needsRender()) {
+        diagnostics.freeHeap = ESP.getFreeHeap();
+        diagnostics.minHeap = ESP.getMinFreeHeap();
+        const uint32_t renderStart = micros();
+        ui.render(navigation, sensors.readings, history, uptime.seconds(), diagnostics);
+        diagnostics.renderUs = micros() - renderStart;
+        diagnostics.maxRenderUs = std::max(diagnostics.maxRenderUs, diagnostics.renderUs);
+        ++diagnostics.renders;
+    }
+    static uint16_t previousBrightness = 0;
+    if (diagnostics.brightness != previousBrightness) {
+        ledcWrite(BacklightChannel, diagnostics.brightness);
+        previousBrightness = diagnostics.brightness;
+    }
+    delay(10);
 }

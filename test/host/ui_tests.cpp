@@ -4,6 +4,10 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#if __has_include("glcdfont.c")
+#include "glcdfont.c"
+#define PREVIEW_BITMAP_FONT
+#endif
 
 // Recording canvas checks geometry and exports SVG previews using GFX's 6x8 cell size.
 struct Canvas {
@@ -42,6 +46,17 @@ struct Canvas {
     void print(const char *s) {
         bounds(x, y, static_cast<int>(std::strlen(s)) * 6 * size, 8 * size);
         labels.push_back(s);
+#ifdef PREVIEW_BITMAP_FONT
+        int cursor = x;
+        for (const unsigned char *p = reinterpret_cast<const unsigned char *>(s); *p; ++p) {
+            for (int column = 0; column < 5; ++column) {
+                const unsigned char bits = font[*p * 5 + column];
+                for (int row = 0; row < 8; ++row)
+                    if (bits & (1 << row)) fillRect(cursor + column * size, y + row * size, size, size, color);
+            }
+            cursor += size * 6;
+        }
+#else
         std::string escaped;
         for (const char *p = s; *p; ++p) {
             if (*p == '<') escaped += "&lt;";
@@ -52,6 +67,7 @@ struct Canvas {
         svg += "<text x='" + std::to_string(x) + "' y='" + std::to_string(y + 7 * size) +
                "' font-family='monospace' font-size='" + std::to_string(8 * size) + "' textLength='" +
                std::to_string(std::strlen(s) * 6 * size) + "' lengthAdjust='spacingAndGlyphs' fill='" + rgb(color) + "'>" + escaped + "</text>\n";
+#endif
     }
     void save(const std::string &path) {
         std::ofstream f(path);

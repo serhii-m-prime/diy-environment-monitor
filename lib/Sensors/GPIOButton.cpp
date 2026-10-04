@@ -32,15 +32,6 @@
         int reading = digitalRead(_pin);
         if (reading != _lastState)
         {
-            if (reading == LOW && _startCallback)
-            {
-                _startCallback();
-            }
-            else if (reading == HIGH && _endCallback)
-            {
-                _endCallback();
-
-            }
             _lastDebounceTime = millis();
             _lastState = reading;
         }
@@ -49,9 +40,14 @@
             if (_currentState != reading)
             {
                 _currentState = reading;
-                if (_currentState == LOW && _callback)
+                if (_currentState == LOW)
                 {
-                    _callback();
+                    if (_startCallback) _startCallback();
+                    if (_callback) _callback();
+                }
+                else if (_endCallback)
+                {
+                    _endCallback();
                 }
             }
         }

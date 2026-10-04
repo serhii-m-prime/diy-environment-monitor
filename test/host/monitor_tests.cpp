@@ -48,5 +48,24 @@ int main() {
     const auto before = clock.seconds();
     clock.tick(2000);
     assert(clock.seconds() >= before + 2);
+    DisplayActivity activity;
+    assert(activity.update(0, false, false));
+    assert(!activity.update(30000, false, false));
+    assert(activity.update(40000, false, true));
+    assert(activity.update(80000, true, false));
+    assert(activity.update(109999, false, false));
+    assert(!activity.update(110000, false, false));
+    assert(activity.update(0xfffffff0U, false, true));
+    assert(activity.update(1000, false, false));
+    assert(!activity.update(40000, false, false));
+    assert(!activity.update(0, false, false)); // no spontaneous wake on subsequent wrap
+    SampleSchedule schedule(100);
+    assert(schedule.fanNeeded(100) && !schedule.due(100));
+    assert(!schedule.due(15099) && schedule.due(15100));
+    schedule.sampled(15100);
+    assert(!schedule.fanNeeded(60099) && schedule.fanNeeded(60100));
+    assert(!schedule.due(75099) && schedule.due(75100));
+    schedule.sampled(0xfffffff0U);
+    assert(!schedule.due(1000) && schedule.due(60000));
     std::printf("PASS: history encoding, ring wrap, navigation, display gating, uptime wrap (%zu bytes history)\n", sizeof(History));
 }

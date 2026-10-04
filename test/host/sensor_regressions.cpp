@@ -2,6 +2,8 @@
 #include <CO2Sensor_MHZ19.h>
 #include <LightSensor_BH1750.h>
 #include <State.h>
+#include <GPIOButton.h>
+#include <TempHumPressSensor_BME280.h>
 #include <cassert>
 #include <limits>
 
@@ -15,6 +17,48 @@ int MHZ19::temperatureCalls = 0;
 bool BH1750::ready = true;
 bool BH1750::configured = true;
 float BH1750::lux = 120.0f;
+bool Adafruit_BME280::connected = false;
+bool Adafruit_BME280::measurementOk = true;
+float Adafruit_BME280::temperature = 22.5f;
+float Adafruit_BME280::humidity = 40.0f;
+float Adafruit_BME280::pressure = 101325.0f;
+
+void testButtons() {
+    GPIOButton button(7);
+    int presses = 0, starts = 0, ends = 0;
+    button.onEvent([&] { ++presses; });
+    button.onEventStart([&] { ++starts; });
+    button.onEventEnd([&] { ++ends; });
+    button.begin();
+    auto step = [&](unsigned long t, int pin) {
+        testTime = t; testPin = pin; button.update();
+    };
+    step(0, HIGH); step(100, LOW); step(110, HIGH); step(180, HIGH);
+    assert(presses == 0 && starts == 0 && ends == 0);
+    step(200, LOW); step(260, LOW); step(300, LOW);
+    assert(presses == 1 && starts == 1 && ends == 0);
+    step(310, HIGH); step(320, LOW); step(380, LOW);
+    assert(presses == 1 && ends == 0);
+    step(400, HIGH); step(460, HIGH); step(500, LOW); step(560, LOW);
+    assert(presses == 2 && starts == 2 && ends == 1);
+}
+
+void testEnvironment() {
+    TempHumPressSensor_BME280 sensor(0x76);
+    sensor.begin(); // Missing sensor must return instead of hanging the worker.
+    assert(sensor.getData() == nullptr);
+    Adafruit_BME280::connected = true;
+    sensor.begin();
+    auto good = static_cast<TempHumPressureData*>(sensor.getData());
+    assert(good && good->temperature == 22.5f && good->pressure == 1013.25f);
+    Adafruit_BME280::measurementOk = false;
+    assert(sensor.getData() == nullptr && good->temperature == 22.5f);
+    Adafruit_BME280::measurementOk = true;
+    Adafruit_BME280::temperature = std::numeric_limits<float>::quiet_NaN();
+    assert(sensor.getData() == nullptr);
+    Adafruit_BME280::temperature = 24;
+    assert(sensor.getData() && good->temperature == 24);
+}
 
 void testPIR() {
     PIRMotionSensor sensor(4);
@@ -112,8 +156,10 @@ void testLight() {
 }
 
 int main() {
+    testButtons();
+    testEnvironment();
     testPIR();
     testCO2();
     testLight();
-    std::puts("PASS: PIR debounce, CO2 errors/recovery, light errors/recovery and state validity");
+    std::puts("PASS: buttons/PIR debounce, BME startup/failure/recovery, CO2 and light errors/recovery");
 }
