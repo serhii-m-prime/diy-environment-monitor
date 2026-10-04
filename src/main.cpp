@@ -76,7 +76,8 @@ void sensorTask(void *) {
         const uint32_t now = millis();
         sensorUptime.tick(now);
         bool publish = false;
-        const bool fan = schedule.fanNeeded(now);
+        schedule.update(now);
+        const bool fan = schedule.fanNeeded();
         if (fan != snapshot.fanOn) {
             snapshot.fanOn = fan;
             ledcWrite(FanChannel, fan ? 142 : 0);
@@ -205,6 +206,14 @@ void loop() {
     }
     // A worker can publish across a second boundary after this loop's first tick.
     uptime.tick(millis());
+    // Expire the pressure tendency once if the worker stops publishing. Do not
+    // redraw the graph on every idle loop or render a hidden/sleeping page.
+    static bool pressureFreshPreviously = false;
+    const bool pressureFresh = history.size() &&
+        uint32_t(uptime.seconds() - history.at(history.size() - 1).seconds) <= PressureTrendToleranceSeconds;
+    if (pressureFresh != pressureFreshPreviously && navigation.page() == Page::Pressure)
+        navigation.invalidate();
+    pressureFreshPreviously = pressureFresh;
     diagnostics.motion = inputs.motion;
     diagnostics.fanOn = sensors.fanOn;
     diagnostics.brightness = brightness();

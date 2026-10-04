@@ -11,18 +11,27 @@ Run with a C++17 host compiler:
   against Arduino/library stubs. Covers debounce, missing BME280, invalid readings,
   timeout/CRC errors, recovery and retaining good data.
 - `monitor_tests.cpp` covers RAM history encoding and ring wrap, navigation,
-  display activity timeout, millis rollover, fan/sample scheduling and exact
+  display activity timeout, millis rollover, fan/settling/sample scheduling and exact
   temperature/humidity/CO2 guidance boundaries, including neutral pressure.
+- `pressure_tests.cpp` covers 3-hour pressure deltas, five-sample averaging,
+  intensity/direction boundaries, warm-up, stale/invalid/missing samples, timestamp
+  jitter, circular overwrite and timer rollover. This target uses C++11, matching
+  the firmware's language standard.
 - `ui_tests.cpp` runs the production renderer against a recording canvas. Checks
   screen bounds, no rendering while off or clean, unchanged overview tiles and
   missing-data graph gaps and pressure in mmHg. Exports all seven screen SVGs with synthetic readings.
   The installed Adafruit GFX bitmap font is used when available, otherwise SVG text.
   Also checks rising/falling multi-band transitions, flat boundary values,
-  invalid data colors, neutral pressure and colored isolated samples.
+  invalid data colors, unavailable pressure trends and colored isolated samples.
+  Pressure previews cover historical tendency bands, min/max/span, rising/falling
+  arrows, steady conditions and stale data.
 - `runtime_tests.cpp` executes the actual `setup()` and `loop()` with mocked
   mailboxes and TFT transport. Checks history collection while off, wake/navigation,
   no duplicate history during light updates, retained brightness on failure and
-  rendering only the selected page at its configured cadence.
+  rendering only the selected page at its configured cadence, and a single redraw
+  when a pressure tendency expires. A bounded execution of the real sensor worker
+  verifies that BME measurements occur after 15 seconds of fan operation and
+  2 seconds of settling, with minute sample cadence.
 
 Generated binaries and previews are in `.pio/host-tests`. These tests do not run
 FreeRTOS scheduling, real UART/I2C, physical TFT transfers or hardware timing.

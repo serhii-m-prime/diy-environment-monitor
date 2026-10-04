@@ -44,7 +44,10 @@ public:
         // Subtract fixed-point sums before conversion: no cancellation near 1000 hPa.
         const float delta = (static_cast<int32_t>(currentSum) - static_cast<int32_t>(referenceSum)) /
                             (10.0f * PressureMeanSamples);
-        return {delta, true};
+        PressureTrend result;
+        result.deltaHpa = delta;
+        result.valid = true;
+        return result;
     }
 
 private:

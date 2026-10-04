@@ -107,12 +107,25 @@ int main() {
     assert(!activity.update(40000, false, false));
     assert(!activity.update(0, false, false)); // no spontaneous wake on subsequent wrap
     SampleSchedule schedule(100);
-    assert(schedule.fanNeeded(100) && !schedule.due(100));
-    assert(!schedule.due(15099) && schedule.due(15100));
-    schedule.sampled(15100);
-    assert(!schedule.fanNeeded(60099) && schedule.fanNeeded(60100));
-    assert(!schedule.due(75099) && schedule.due(75100));
+    assert(schedule.fanNeeded() && !schedule.due(100));
+    schedule.update(15099);
+    assert(schedule.fanNeeded() && !schedule.due(15099));
+    schedule.update(15100);
+    assert(!schedule.fanNeeded() && !schedule.due(15100));
+    assert(!schedule.due(17099) && schedule.due(17100));
+    schedule.sampled(17100);
+    schedule.update(60099);
+    assert(!schedule.fanNeeded());
+    schedule.update(60100);
+    assert(schedule.fanNeeded() && !schedule.due(60100));
+    schedule.update(75100);
+    assert(!schedule.fanNeeded() && !schedule.due(77099) && schedule.due(77100));
     schedule.sampled(0xfffffff0U);
-    assert(!schedule.due(1000) && schedule.due(60000));
+    schedule.update(1000);
+    assert(!schedule.fanNeeded() && !schedule.due(1000));
+    schedule.update(60000); // late start still needs an actual 15 s fan run
+    assert(schedule.fanNeeded() && !schedule.due(60000));
+    schedule.update(80000); // late switch-off still needs the full settling time
+    assert(!schedule.fanNeeded() && !schedule.due(81999) && schedule.due(82000));
     std::printf("PASS: guidance boundaries, history encoding, ring wrap, navigation, display gating, uptime wrap (%zu bytes history)\n", sizeof(History));
 }

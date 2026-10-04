@@ -2,6 +2,7 @@
 
 #include <MonitorModel.h>
 #include <MeasurementGuidance.h>
+#include <PressureTrend.h>
 #include <algorithm>
 #include <cstdio>
 
@@ -121,7 +122,7 @@ private:
             if (level == Guidance::Reference) return "Ventilation reference";
             if (level == Guidance::Watch) return "Ventilation / monitor";
             return "High CO2 / check ventilation";
-        case Metric::Pressure: return "Atmospheric pressure / No health bands";
+        case Metric::Pressure: return "Atmospheric pressure";
         case Metric::Light: return "Ambient light / auto brightness";
         }
         return "";
@@ -145,8 +146,41 @@ private:
         }
         part(1);
     }
+    void pressureSummary(bool valid, const History &history, uint32_t now,
+                         size_t count, float low, float high) {
+        const auto trend = valid ? latestPressureTrend(history, now) : PressureTrend{};
+        const uint16_t color = guidanceColor(trend.guidance());
+        char buffer[64];
+        if (trend.valid) {
+            std::snprintf(buffer, sizeof(buffer), "3h %+.2f mmHg", trend.deltaHpa * HpaToMmHg);
+            text(64, 90, buffer, 2, color);
+            const int direction = trend.direction();
+            const char *speed = trend.guidance() == Guidance::Attention ? "rapid" :
+                                trend.guidance() == Guidance::Watch ? "noticeable" : "slow";
+            if (!direction) std::snprintf(buffer, sizeof(buffer), "Steady");
+            else std::snprintf(buffer, sizeof(buffer), "%s / %s", direction > 0 ? "Rising" : "Falling", speed);
+            text(268, 94, buffer, 1, color);
+            // Draw the arrow ourselves: the built-in font has no Unicode arrows.
+            if (direction) {
+                canvas_.drawFastVLine(448, 64, 20, color);
+                for (int i = 0; i < 6; ++i)
+                    canvas_.drawFastHLine(448 - i, direction > 0 ? 64 + i : 83 - i, 2 * i + 1, color);
+            } else {
+                canvas_.drawFastHLine(442, 69, 13, color);
+                canvas_.drawFastHLine(442, 77, 13, color);
+            }
+        } else text(64, 90, valid ? "3h: insufficient data" : "3h: no valid pressure", 1, Muted);
+        if (count) {
+            std::snprintf(buffer, sizeof(buffer), "6h available: min %.1f max %.1f mmHg", low, high);
+            text(64, 112, buffer, 1, Muted);
+            std::snprintf(buffer, sizeof(buffer), "Span %.2f mmHg", high - low);
+            text(64, 123, buffer, 1, Muted);
+        } else text(64, 112, "6h available: min/max/span N/A", 1, Muted);
+    }
     void graph(Metric metric, const Readings &r, const History &history, uint32_t now) {
-        constexpr int x0 = 64, x1 = 464, y0 = 104, y1 = 258;
+        constexpr int x0 = 64, x1 = 464, y1 = 258;
+        const bool pressure = metric == Metric::Pressure;
+        const int y0 = pressure ? 136 : 104;
         canvas_.fillRect(0, 50, 480, 242, Background);
         float latest = 0;
         const bool valid = HistoryPoint::from(now, r).value(metric, latest);
@@ -159,7 +193,7 @@ private:
         else std::snprintf(buffer, sizeof(buffer), "N/A");
         const Guidance level = valid ? measurementGuidance(metric, latest) : Guidance::Unavailable;
         text(64, 61, buffer, 3, guidanceColor(level));
-        text(64, 90, guidanceLabel(metric, level, latest), 1, guidanceColor(level));
+        if (!pressure) text(64, 90, guidanceLabel(metric, level, latest), 1, guidanceColor(level));
 
         float low = 0, high = 0;
         size_t validCount = 0;
@@ -170,6 +204,7 @@ private:
             if (validCount++ == 0) low = high = v;
             else { low = std::min(low, v); high = std::max(high, v); }
         }
+        if (pressure) pressureSummary(valid, history, now, validCount, low, high);
         if (!validCount) { low = 0; high = 1; }
         const float minimumSpan = metric == Metric::Temperature || metric == Metric::Pressure ? 2.0f :
                                   metric == Metric::Humidity ? 10.0f : metric == Metric::CO2 ? 200.0f : 20.0f;
@@ -196,6 +231,8 @@ private:
         int lastX = 0, lastY = 0;
         float lastValue = 0;
         uint32_t lastSeconds = 0;
+        PressureTrendSeries pressureSeries(history);
+        bool lastTrendValid = false;
         for (size_t i = 0; i < history.size(); ++i) {
             const auto &p = history.at(i);
             float v;
@@ -205,15 +242,24 @@ private:
             }
             const int x = x1 - static_cast<int>((uint64_t(now - p.seconds) * (x1 - x0)) / HistorySeconds);
             const int y = y1 - static_cast<int>((v - low) * (y1 - y0) / (high - low));
+            const auto trend = pressure ? pressureSeries.at(i) : PressureTrend{};
             // Do not join across missed sample periods or failed sensor reads.
-            if (connected && p.seconds - lastSeconds <= 90)
-                graphSegment(metric, lastX, lastY, lastValue, x, y, v);
-            else canvas_.drawPixel(x, y, guidanceColor(measurementGuidance(metric, v)));
+            if (connected && p.seconds - lastSeconds <= 90) {
+                if (pressure) canvas_.drawLine(lastX, lastY, x, y,
+                    guidanceColor(lastTrendValid ? trend.guidance() : Guidance::Neutral));
+                else graphSegment(metric, lastX, lastY, lastValue, x, y, v);
+            } else canvas_.drawPixel(x, y, guidanceColor(pressure ? trend.guidance() : measurementGuidance(metric, v)));
             connected = true; lastX = x; lastY = y; lastSeconds = p.seconds;
             lastValue = v;
+            lastTrendValid = trend.valid;
         }
         if (!validCount) text(154, 178, "No history yet", 2, Muted);
-        if (guidanceEdges(metric).count) {
+        if (pressure) {
+            text(64, 287, "Small", 1, Reference);
+            text(160, 287, "Noticeable", 1, Watch);
+            text(268, 287, "Rapid", 1, Attention);
+            text(366, 287, "No trend", 1, Neutral);
+        } else if (guidanceEdges(metric).count) {
             text(64, 287, "Reference", 1, Reference);
             text(160, 287, "Watch", 1, Watch);
             text(238, 287, "Attention", 1, Attention);

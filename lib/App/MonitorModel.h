@@ -165,17 +165,29 @@ private:
 class SampleSchedule {
 public:
     static constexpr uint32_t FanLeadMs = 15000;
-    explicit SampleSchedule(uint32_t now) : lastSample_(now) {}
-    bool fanNeeded(uint32_t now) const {
-        return first_ || uint32_t(now - lastSample_) >= SamplePeriodMs - FanLeadMs;
+    // Initial engineering choice; verify actual fan spin-down on the breadboard.
+    static constexpr uint32_t FanSettleMs = 2000;
+    static_assert(FanLeadMs + FanSettleMs < SamplePeriodMs, "Fan cycle exceeds sample period");
+    explicit SampleSchedule(uint32_t now) : phaseStarted_(now), lastSample_(now) {}
+    void update(uint32_t now) {
+        if (phase_ == Phase::Idle && uint32_t(now - lastSample_) >= SamplePeriodMs - FanLeadMs - FanSettleMs) {
+            phase_ = Phase::Fan;
+            phaseStarted_ = now;
+        } else if (phase_ == Phase::Fan && uint32_t(now - phaseStarted_) >= FanLeadMs) {
+            phase_ = Phase::Settling;
+            phaseStarted_ = now; // measure from actual switch-off, even after a late worker tick
+        }
     }
+    bool fanNeeded() const { return phase_ == Phase::Fan; }
     bool due(uint32_t now) const {
-        return uint32_t(now - lastSample_) >= (first_ ? FanLeadMs : SamplePeriodMs);
+        return phase_ == Phase::Settling && uint32_t(now - phaseStarted_) >= FanSettleMs;
     }
-    void sampled(uint32_t started) { lastSample_ = started; first_ = false; }
+    void sampled(uint32_t started) { lastSample_ = started; phase_ = Phase::Idle; }
 private:
+    enum class Phase : uint8_t { Idle, Fan, Settling };
+    Phase phase_ = Phase::Fan;
+    uint32_t phaseStarted_;
     uint32_t lastSample_;
-    bool first_ = true;
 };
 
 } // namespace monitor

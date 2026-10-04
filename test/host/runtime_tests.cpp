@@ -1,5 +1,5 @@
 // Run the actual main loop with mailboxes and display transport mocked.
-// Workers are not scheduled here; their outputs are injected into the real queues.
+// Main-loop tests inject snapshots. A bounded worker run also verifies fan/read timing.
 #include "../../src/main.cpp"
 #include <cassert>
 #include <cstdio>
@@ -63,9 +63,19 @@ int main() {
     testTime = 100000; loop();
     assert(!display.on);
     input.rightPresses = 5; // four presses accumulated while loop was busy
+    input.motion = true;
     xQueueOverwrite(inputMailbox, &input);
     loop();
     assert(display.on && navigation.page() == Page::Pressure);
+    const auto pressureDraws = display.draws;
+    testTime = 151000; loop(); // latest stored sample is 61 s: still fresh at 90 s
+    assert(display.draws == pressureDraws);
+    testTime = 152000; loop();
+    assert(display.draws > pressureDraws && display.on);
+    const auto expiredDraws = display.draws;
+    loop();
+    assert(display.draws == expiredDraws); // expiration causes one redraw only
+    input.motion = false;
     input.rightPresses = 6;
     xQueueOverwrite(inputMailbox, &input);
     loop();
@@ -87,5 +97,31 @@ int main() {
     xQueueOverwrite(inputMailbox, &input);
     loop();
     assert(navigation.page() == Page::Service); // a complete seven-page turn
-    std::puts("PASS: actual loop collects while off, wakes/navigates, retains brightness and draws only selected page");
+    // Run the real sensor worker for two samples, stopping via the delay hook.
+    struct WorkerFinished {};
+    testTime = 0;
+    unsigned measurements = 0;
+    static unsigned *measurementCounter;
+    measurementCounter = &measurements;
+    Adafruit_BME280::beforeMeasurement = [] {
+        assert(mockFan == 0);
+        assert(testTime == (*measurementCounter == 0 ? 17000 : 77000));
+        ++*measurementCounter;
+    };
+    mockTaskDelay = [](TickType_t ticks) {
+        if (testTime < 15000 || (testTime >= 60000 && testTime < 75000)) assert(mockFan == 142);
+        else assert(mockFan == 0);
+        SensorSnapshot snapshot;
+        if (xQueueReceive(sensorMailbox, &snapshot, 0) == pdTRUE && snapshot.historySequence == 2) {
+            assert(snapshot.historyPoint.seconds == 77 && !snapshot.fanOn);
+            throw WorkerFinished{};
+        }
+        assert(testTime < 78000);
+        testTime += ticks;
+    };
+    try { sensorTask(nullptr); } catch (const WorkerFinished &) {}
+    assert(measurements == 2);
+    Adafruit_BME280::beforeMeasurement = nullptr;
+    mockTaskDelay = nullptr;
+    std::puts("PASS: loop render gating, pressure expiry, brightness, and actual worker waits 2 s after fan stop before sampling");
 }

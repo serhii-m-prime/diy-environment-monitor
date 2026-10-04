@@ -14,8 +14,11 @@ ESP32-S3 + ST7796S (480 x 320 landscape), MH-Z19, BME280, BH1750 and PIR.
 - The overview shows pressure in both hPa and mmHg (millimetres of mercury).
 - Temperature, humidity and CO2 graphs color each historical segment and the latest
   reading green/yellow/red using [documented guidance and sources](docs/measurement-colors.md).
-  These are project advisory bands, not universal WHO safety limits. Atmospheric
-  pressure and ambient light use neutral blue lines without health classifications.
+  These are project advisory bands, not universal WHO safety limits. Ambient light
+  remains neutral blue. Pressure graph colors indicate the magnitude of its 3-hour
+  change: <=1.5 hPa green, >1.5 to 3.5 hPa yellow, >3.5 hPa red, in either direction.
+  The pressure screen shows the signed change in mmHg, direction, and min/max/span
+  of available readings over six hours. The absolute pressure number stays blue.
 
 The display is initially visible for 30 seconds. PIR motion keeps it on; a button
 press wakes it and changes the page. After motion ends or the last button press,
@@ -35,8 +38,16 @@ screen off.
 - Time axis is a trailing six-hour window with about 400 horizontal pixels.
   Vertical scale follows the valid data with a minimum span for nearly flat traces.
   Invalid readings and gaps over 90 seconds break the line; no synthetic backfill.
-- The fan runs for 15 seconds before each environment/CO2 sample, including the
-  first sample after startup. Before the first sample those values show N/A.
+- Pressure tendency compares two means of five consecutive minute samples, about
+  three hours apart. It requires valid endpoint windows and a recent sample;
+  unavailable trends are blue. Initial warm-up is 3 h 4 min after the first sample.
+  The oldest approximately three hours of a full buffer have no earlier reference
+  and remain blue. Analysis uses O(N) time and constant working memory; no new buffer.
+- The fan runs for 15 seconds, then stops for 2 seconds before each environment/CO2
+  sample. These phases do not block the worker's light reads or the buttons/UI.
+  The first sample is available after approximately 17 seconds plus sensor I/O;
+  subsequent samples normally start every minute. Values show N/A before the first
+  sample. The 2-second settling delay must be checked against physical fan spin-down.
 - Only the selected screen is rendered, and only while the display is enabled.
   The overview updates changed tiles; graphs update with history/page/wake events;
   the service screen refreshes once per second. No full-screen framebuffer.
@@ -77,7 +88,8 @@ pio run -e esp32-s3-debug -e esp32-s3-release
 
 Host tests cover history capacity/wrap/invalid samples, timer rollover, navigation,
 render gating, layout bounds, graph gaps, guidance boundaries and color transitions,
-button/PIR debounce and sensor errors.
+pressure tendency/expiry, button/PIR debounce, sensor errors and the real worker's
+fan-off settling interval using a simulated clock.
 They generate SVG previews in `.pio/host-tests`; with the downloaded Adafruit GFX
 library present, the previews use the same bitmap font as the device.
 
