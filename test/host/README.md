@@ -11,11 +11,14 @@ Run with a C++17 host compiler:
   against Arduino/library stubs. Covers debounce, missing BME280, invalid readings,
   timeout/CRC errors, recovery and retaining good data.
 - `monitor_tests.cpp` covers RAM history encoding and ring wrap, navigation,
-  display activity timeout, millis rollover and fan/sample scheduling.
+  display activity timeout, millis rollover, fan/sample scheduling and exact
+  temperature/humidity/CO2 guidance boundaries, including neutral pressure.
 - `ui_tests.cpp` runs the production renderer against a recording canvas. Checks
   screen bounds, no rendering while off or clean, unchanged overview tiles and
   missing-data graph gaps and pressure in mmHg. Exports all seven screen SVGs with synthetic readings.
   The installed Adafruit GFX bitmap font is used when available, otherwise SVG text.
+  Also checks rising/falling multi-band transitions, flat boundary values,
+  invalid data colors, neutral pressure and colored isolated samples.
 - `runtime_tests.cpp` executes the actual `setup()` and `loop()` with mocked
   mailboxes and TFT transport. Checks history collection while off, wake/navigation,
   no duplicate history during light updates, retained brightness on failure and

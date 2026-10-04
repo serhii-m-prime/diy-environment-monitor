@@ -1,6 +1,7 @@
 #pragma once
 
 #include <MonitorModel.h>
+#include <MeasurementGuidance.h>
 #include <algorithm>
 #include <cstdio>
 
@@ -42,6 +43,7 @@ private:
     static constexpr uint16_t Background = 0x0862, Panel = 0x10c4;
     static constexpr uint16_t Foreground = 0xef7d, Muted = 0x8c92, Grid = 0x2947;
     static constexpr uint16_t Accent = 0x4f18;
+    static constexpr uint16_t Reference = 0x4ee9, Watch = 0xff20, Attention = 0xfa8a, Neutral = 0x6ddf;
     Canvas &canvas_;
     bool painted_ = false;
     Page paintedPage_ = Page::Overview;
@@ -95,6 +97,54 @@ private:
         }
         previous_ = r;
     }
+    static uint16_t guidanceColor(Guidance level) {
+        switch (level) {
+        case Guidance::Reference: return Reference;
+        case Guidance::Watch: return Watch;
+        case Guidance::Attention: return Attention;
+        case Guidance::Neutral: return Neutral;
+        default: return Muted;
+        }
+    }
+    static const char *guidanceLabel(Metric metric, Guidance level, float value) {
+        if (level == Guidance::Unavailable) return "No valid reading";
+        switch (metric) {
+        case Metric::Temperature:
+            if (level == Guidance::Reference) return "Reference range";
+            if (level == Guidance::Watch) return "Warm / check comfort";
+            return value < guidance::TemperatureMin ? "Cold / check heating" : "Hot / check cooling";
+        case Metric::Humidity:
+            if (level == Guidance::Reference) return "Reference range";
+            if (level == Guidance::Attention) return "Humid / check moisture";
+            return value < guidance::HumidityMin ? "Dry / below reference" : "Above ideal humidity";
+        case Metric::CO2:
+            if (level == Guidance::Reference) return "Ventilation reference";
+            if (level == Guidance::Watch) return "Ventilation / monitor";
+            return "High CO2 / check ventilation";
+        case Metric::Pressure: return "Atmospheric pressure / No health bands";
+        case Metric::Light: return "Ambient light / auto brightness";
+        }
+        return "";
+    }
+    void graphSegment(Metric metric, int x0, int y0, float v0, int x1, int y1, float v1) {
+        // Split only at crossed thresholds: <= 4 lines, no heap or per-pixel color loop.
+        const auto edges = guidanceEdges(metric);
+        float previous = 0;
+        int lastX = x0, lastY = y0;
+        auto part = [&](float end) {
+            const int x = x0 + static_cast<int>(std::lround((x1 - x0) * end));
+            const int y = y0 + static_cast<int>(std::lround((y1 - y0) * end));
+            const float middle = v0 + (v1 - v0) * ((previous + end) * 0.5f);
+            canvas_.drawLine(lastX, lastY, x, y, guidanceColor(measurementGuidance(metric, middle)));
+            previous = end; lastX = x; lastY = y;
+        };
+        for (size_t i = 0; i < edges.count; ++i) {
+            const float edge = edges.values[v1 > v0 ? i : edges.count - 1 - i];
+            if ((v0 < edge && edge < v1) || (v1 < edge && edge < v0))
+                part((edge - v0) / (v1 - v0));
+        }
+        part(1);
+    }
     void graph(Metric metric, const Readings &r, const History &history, uint32_t now) {
         constexpr int x0 = 64, x1 = 464, y0 = 104, y1 = 258;
         canvas_.fillRect(0, 50, 480, 242, Background);
@@ -107,7 +157,9 @@ private:
         if (valid) std::snprintf(buffer, sizeof(buffer), "%.*f %s",
                                 metric == Metric::Temperature || metric == Metric::Humidity || metric == Metric::Pressure ? 1 : 0, latest, unit);
         else std::snprintf(buffer, sizeof(buffer), "N/A");
-        text(64, 61, buffer, 3, Accent);
+        const Guidance level = valid ? measurementGuidance(metric, latest) : Guidance::Unavailable;
+        text(64, 61, buffer, 3, guidanceColor(level));
+        text(64, 90, guidanceLabel(metric, level, latest), 1, guidanceColor(level));
 
         float low = 0, high = 0;
         size_t validCount = 0;
@@ -142,6 +194,7 @@ private:
 
         bool connected = false;
         int lastX = 0, lastY = 0;
+        float lastValue = 0;
         uint32_t lastSeconds = 0;
         for (size_t i = 0; i < history.size(); ++i) {
             const auto &p = history.at(i);
@@ -154,12 +207,18 @@ private:
             const int y = y1 - static_cast<int>((v - low) * (y1 - y0) / (high - low));
             // Do not join across missed sample periods or failed sensor reads.
             if (connected && p.seconds - lastSeconds <= 90)
-                canvas_.drawLine(lastX, lastY, x, y, Accent);
-            else canvas_.drawPixel(x, y, Accent);
+                graphSegment(metric, lastX, lastY, lastValue, x, y, v);
+            else canvas_.drawPixel(x, y, guidanceColor(measurementGuidance(metric, v)));
             connected = true; lastX = x; lastY = y; lastSeconds = p.seconds;
+            lastValue = v;
         }
         if (!validCount) text(154, 178, "No history yet", 2, Muted);
-        text(90, 287, "1 min / point | gaps = no data", 1, Muted);
+        if (guidanceEdges(metric).count) {
+            text(64, 287, "Reference", 1, Reference);
+            text(160, 287, "Watch", 1, Watch);
+            text(238, 287, "Attention", 1, Attention);
+            text(360, 287, "1 min/pt", 1, Muted);
+        } else text(90, 287, "1 min / point | gaps = no data", 1, Muted);
     }
     void service(const History &history, const Diagnostics &d) {
         canvas_.fillRect(12, 52, 456, 242, Background);

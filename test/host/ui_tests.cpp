@@ -15,6 +15,9 @@ struct Canvas {
     uint16_t color = 0;
     std::string svg;
     std::vector<std::string> labels;
+    std::vector<uint16_t> textColors, lineColors, pixelColors;
+    struct Segment { int x0, y0, x1, y1; };
+    std::vector<Segment> segments;
     void setTextWrap(bool) {}
     void setCursor(int a, int b) { x = a; y = b; }
     void setTextSize(int s) { size = s; }
@@ -37,15 +40,18 @@ struct Canvas {
     }
     void drawFastHLine(int a, int b, int w, uint16_t c) { fillRect(a,b,w,1,c); }
     void drawFastVLine(int a, int b, int h, uint16_t c) { fillRect(a,b,1,h,c); }
-    void drawPixel(int a, int b, uint16_t c) { ++pixels; fillRect(a,b,1,1,c); }
+    void drawPixel(int a, int b, uint16_t c) { ++pixels; pixelColors.push_back(c); fillRect(a,b,1,1,c); }
     void drawLine(int a, int b, int c, int d, uint16_t col) {
         bounds(a,b,1,1); bounds(c,d,1,1); ++lines;
+        lineColors.push_back(col);
+        segments.push_back({a,b,c,d});
         svg += "<line x1='" + std::to_string(a) + "' y1='" + std::to_string(b) + "' x2='" +
                std::to_string(c) + "' y2='" + std::to_string(d) + "' stroke='" + rgb(col) + "'/>\n";
     }
     void print(const char *s) {
         bounds(x, y, static_cast<int>(std::strlen(s)) * 6 * size, 8 * size);
         labels.push_back(s);
+        textColors.push_back(color);
 #ifdef PREVIEW_BITMAP_FONT
         int cursor = x;
         for (const unsigned char *p = reinterpret_cast<const unsigned char *>(s); *p; ++p) {
@@ -83,11 +89,12 @@ int main() {
     History history;
     for (unsigned i = 0; i <= 360; ++i) {
         auto sample = r;
-        sample.temperature += 2 * std::sin(i / 40.0);
-        sample.humidity += 8 * std::sin(i / 30.0);
-        sample.co2 += 300 * std::sin(i / 45.0);
-        sample.light += 100 * std::sin(i / 50.0);
-        sample.pressure += 3 * std::sin(i / 80.0);
+        const double age = static_cast<double>(i) - 360;
+        sample.temperature += 7 * std::sin(age / 40.0);
+        sample.humidity += 23 * std::sin(age / 30.0);
+        sample.co2 += 1000 * std::pow(std::sin(age / 45.0), 2);
+        sample.light += 100 * std::sin(age / 50.0);
+        sample.pressure += 3 * std::sin(age / 80.0);
         if (i > 130 && i < 145) sample.valid = 0;
         history.append(HistoryPoint::from(i * 60, sample));
     }
@@ -95,6 +102,7 @@ int main() {
     diag.freeHeap = 243120; diag.minHeap = 240016; diag.loopUs = 12345;
     diag.renderUs = 25400; diag.maxRenderUs = 41234; diag.maxLoopUs = 60111;
     diag.uptimeSeconds = HistorySeconds; diag.brightness = 540;
+    constexpr uint16_t green = 0x4ee9, yellow = 0xff20, red = 0xfa8a, blue = 0x6ddf, gray = 0x8c92;
     for (int page = 0; page < static_cast<int>(Page::Count); ++page) {
         Canvas c;
         MonitorUi<Canvas> ui(c);
@@ -106,6 +114,8 @@ int main() {
         if (page == static_cast<int>(Page::Pressure)) {
             assert(std::find(c.labels.begin(), c.labels.end(), "760.0 mmHg") != c.labels.end());
             assert(std::find(c.labels.begin(), c.labels.end(), "6/7") != c.labels.end());
+            assert(std::find(c.labels.begin(), c.labels.end(), "Atmospheric pressure / No health bands") != c.labels.end());
+            assert(std::all_of(c.lineColors.begin(), c.lineColors.end(), [](uint16_t col) { return col == blue; }));
         }
         c.save(".pio/host-tests/screen-" + std::to_string(page) + ".svg");
         const int draws = c.operations;
@@ -124,6 +134,8 @@ int main() {
         Navigation nav; nav.move(metricPage); nav.setOn(true);
         History sparse;
         ui.render(nav, Readings{}, sparse, 600, diag);
+        auto missing = std::find(c.labels.begin(), c.labels.end(), "N/A");
+        assert(missing != c.labels.end() && c.textColors[missing - c.labels.begin()] == gray);
         sparse.append(HistoryPoint::from(0, r));
         sparse.append(HistoryPoint::from(60, Readings{}));
         sparse.append(HistoryPoint::from(120, r));
@@ -134,5 +146,68 @@ int main() {
         nav.invalidate();
         ui.render(nav, r, sparse, HistorySeconds + 601, diag);
     }
-    std::puts("PASS: seven screen layouts, pressure units, off/clean render gating, graph gaps and SVG previews");
+    auto setValue = [](Readings &sample, Page page, float value) {
+        switch (page) {
+        case Page::Temperature: sample.temperature = value; break;
+        case Page::Humidity: sample.humidity = value; break;
+        case Page::CO2: sample.co2 = static_cast<int>(value); break;
+        case Page::Pressure: sample.pressure = value; break;
+        default: assert(false);
+        }
+    };
+    struct Transition { Page page; float from, to; std::vector<uint16_t> colors; };
+    const Transition transitions[] = {
+        {Page::Temperature, 16, 28, {red, green, yellow, red}},
+        {Page::Temperature, 28, 16, {red, yellow, green, red}},
+        {Page::Humidity, 20, 70, {yellow, green, yellow, red}},
+        {Page::Humidity, 70, 20, {red, yellow, green, yellow}},
+        {Page::CO2, 800, 1800, {green, yellow, red}},
+        {Page::CO2, 1800, 800, {red, yellow, green}},
+        {Page::Pressure, 800, 1050, {blue}},
+        {Page::Temperature, 18, 18, {green}},
+        {Page::Temperature, 24, 24, {green}},
+        {Page::Temperature, 26, 26, {yellow}},
+        {Page::Humidity, 30, 30, {green}},
+        {Page::Humidity, 50, 50, {green}},
+        {Page::Humidity, 60, 60, {red}},
+        {Page::CO2, 1000, 1000, {green}},
+        {Page::CO2, 1500, 1500, {yellow}}
+    };
+    for (const auto &t : transitions) {
+        Canvas c;
+        MonitorUi<Canvas> ui(c);
+        Navigation nav; nav.move(static_cast<int>(t.page)); nav.setOn(true);
+        History crossing;
+        auto sample = r;
+        setValue(sample, t.page, t.from);
+        crossing.append(HistoryPoint::from(0, sample));
+        setValue(sample, t.page, t.to);
+        crossing.append(HistoryPoint::from(60, sample));
+        ui.render(nav, sample, crossing, 60, diag);
+        assert(c.lineColors == t.colors);
+        // Split parts must meet, and progress in both screen axes without jumps.
+        for (size_t i = 1; i < c.segments.size(); ++i) {
+            assert(c.segments[i-1].x1 == c.segments[i].x0);
+            assert(c.segments[i-1].y1 == c.segments[i].y0);
+        }
+        const auto latest = std::find_if(c.labels.begin(), c.labels.end(), [](const std::string &s) {
+            return s.find(" ") != std::string::npos && !s.empty() && s.front() >= '0' && s.front() <= '9';
+        });
+        assert(latest != c.labels.end() && c.textColors[latest - c.labels.begin()] == t.colors.back());
+    }
+    // An invalid sample or a missed minute breaks the line even across color zones.
+    {
+        Canvas c;
+        MonitorUi<Canvas> ui(c);
+        Navigation nav; nav.move(static_cast<int>(Page::CO2)); nav.setOn(true);
+        History sparse;
+        auto sample = r;
+        sample.co2 = 800; sparse.append(HistoryPoint::from(0, sample));
+        sparse.append(HistoryPoint::from(60, Readings{}));
+        sample.co2 = 1200; sparse.append(HistoryPoint::from(120, sample));
+        sample.co2 = 1800; sparse.append(HistoryPoint::from(300, sample));
+        ui.render(nav, sample, sparse, 300, diag);
+        assert(c.lines == 0 && c.pixelColors == std::vector<uint16_t>({green, yellow, red}));
+    }
+    std::puts("PASS: seven screen layouts, colored thresholds in both directions, neutral pressure, render gating, gaps and SVG previews");
 }

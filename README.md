@@ -12,6 +12,10 @@ ESP32-S3 + ST7796S (480 x 320 landscape), MH-Z19, BME280, BH1750 and PIR.
 - Screen order: environment overview, temperature, humidity, CO2, ambient light,
   pressure (mmHg), service diagnostics. Labels use the built-in ASCII bitmap font.
 - The overview shows pressure in both hPa and mmHg (millimetres of mercury).
+- Temperature, humidity and CO2 graphs color each historical segment and the latest
+  reading green/yellow/red using [documented guidance and sources](docs/measurement-colors.md).
+  These are project advisory bands, not universal WHO safety limits. Atmospheric
+  pressure and ambient light use neutral blue lines without health classifications.
 
 The display is initially visible for 30 seconds. PIR motion keeps it on; a button
 press wakes it and changes the page. After motion ends or the last button press,
@@ -72,7 +76,8 @@ pio run -e esp32-s3-debug -e esp32-s3-release
 ```
 
 Host tests cover history capacity/wrap/invalid samples, timer rollover, navigation,
-render gating, layout bounds, graph gaps, button/PIR debounce and sensor errors.
+render gating, layout bounds, graph gaps, guidance boundaries and color transitions,
+button/PIR debounce and sensor errors.
 They generate SVG previews in `.pio/host-tests`; with the downloaded Adafruit GFX
 library present, the previews use the same bitmap font as the device.
 
