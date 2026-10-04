@@ -44,6 +44,8 @@ int main() {
     xQueueOverwrite(sensorMailbox, &sample);
     loop();
     assert(history.size() == 2 && display.draws == offDraws && mockBacklight == 0);
+    float pressure = 0;
+    assert(history.at(1).value(Metric::Pressure, pressure) && std::fabs(pressure - 759.8125f) < 0.05f);
     InputSnapshot input;
     input.rightPresses = 1;
     xQueueOverwrite(inputMailbox, &input);
@@ -63,13 +65,17 @@ int main() {
     input.rightPresses = 5; // four presses accumulated while loop was busy
     xQueueOverwrite(inputMailbox, &input);
     loop();
+    assert(display.on && navigation.page() == Page::Pressure);
+    input.rightPresses = 6;
+    xQueueOverwrite(inputMailbox, &input);
+    loop();
     assert(display.on && navigation.page() == Page::Service);
     const auto serviceDraws = display.draws;
     testTime += 500; loop();
     assert(display.draws == serviceDraws);
     testTime += 600; loop();
     assert(display.draws > serviceDraws);
-    input.rightPresses = 6;
+    input.rightPresses = 7;
     xQueueOverwrite(inputMailbox, &input);
     loop();
     assert(navigation.page() == Page::Overview);
@@ -77,5 +83,9 @@ int main() {
     xQueueOverwrite(inputMailbox, &input);
     loop();
     assert(navigation.page() == Page::Service);
+    input.rightPresses += static_cast<uint32_t>(Page::Count);
+    xQueueOverwrite(inputMailbox, &input);
+    loop();
+    assert(navigation.page() == Page::Service); // a complete seven-page turn
     std::puts("PASS: actual loop collects while off, wakes/navigates, retains brightness and draws only selected page");
 }

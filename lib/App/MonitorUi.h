@@ -28,6 +28,7 @@ public:
         case Page::Humidity: graph(Metric::Humidity, r, history, nowSeconds); break;
         case Page::CO2: graph(Metric::CO2, r, history, nowSeconds); break;
         case Page::Light: graph(Metric::Light, r, history, nowSeconds); break;
+        case Page::Pressure: graph(Metric::Pressure, r, history, nowSeconds); break;
         case Page::Service: service(history, diag); break;
         default: break;
         }
@@ -54,10 +55,11 @@ private:
     }
     void header(Page page) {
         static const char *titles[] = {"ENVIRONMENT", "TEMPERATURE / 6h", "HUMIDITY / 6h",
-                                      "CO2 / 6h", "LIGHT / 6h", "SERVICE"};
+                                      "CO2 / 6h", "LIGHT / 6h", "PRESSURE / 6h", "SERVICE"};
+        static_assert(sizeof(titles) / sizeof(titles[0]) == static_cast<unsigned>(Page::Count), "Missing page title");
         text(14, 14, titles[static_cast<uint8_t>(page)]);
         char count[12];
-        std::snprintf(count, sizeof(count), "%u/6", static_cast<unsigned>(page) + 1);
+        std::snprintf(count, sizeof(count), "%u/%u", static_cast<unsigned>(page) + 1, static_cast<unsigned>(Page::Count));
         text(430, 14, count, 2, Accent);
         canvas_.drawFastHLine(12, 42, 456, Grid);
         text(12, 302, "< LEFT", 1, Muted);
@@ -86,9 +88,8 @@ private:
         if (force || (changes & Environment) || r.pressure != previous_.pressure) {
             canvas_.fillRect(12, 262, 456, 24, Background);
             char buffer[40];
-            // 1 mmHg = 133.322387415 Pa; pressure is stored in hPa.
             if (r.valid & Environment) std::snprintf(buffer, sizeof(buffer), "Pressure %.1f hPa / %.1f mmHg",
-                                                   r.pressure, r.pressure * 0.750061683f);
+                                                   r.pressure, r.pressure * HpaToMmHg);
             else std::snprintf(buffer, sizeof(buffer), "Pressure  N/A");
             text(16, 266, buffer, 2, Muted);
         }
@@ -100,10 +101,11 @@ private:
         float latest = 0;
         const bool valid = HistoryPoint::from(now, r).value(metric, latest);
         const char *unit = metric == Metric::Temperature ? "C" :
-                           metric == Metric::Humidity ? "%" : metric == Metric::CO2 ? "ppm" : "lx";
+                           metric == Metric::Humidity ? "%" : metric == Metric::CO2 ? "ppm" :
+                           metric == Metric::Pressure ? "mmHg" : "lx";
         char buffer[48];
         if (valid) std::snprintf(buffer, sizeof(buffer), "%.*f %s",
-                                metric == Metric::Temperature || metric == Metric::Humidity ? 1 : 0, latest, unit);
+                                metric == Metric::Temperature || metric == Metric::Humidity || metric == Metric::Pressure ? 1 : 0, latest, unit);
         else std::snprintf(buffer, sizeof(buffer), "N/A");
         text(64, 61, buffer, 3, Accent);
 
@@ -117,7 +119,7 @@ private:
             else { low = std::min(low, v); high = std::max(high, v); }
         }
         if (!validCount) { low = 0; high = 1; }
-        const float minimumSpan = metric == Metric::Temperature ? 2.0f :
+        const float minimumSpan = metric == Metric::Temperature || metric == Metric::Pressure ? 2.0f :
                                   metric == Metric::Humidity ? 10.0f : metric == Metric::CO2 ? 200.0f : 20.0f;
         const float span = std::max(minimumSpan, high - low);
         const float mid = (high + low) * 0.5f;
@@ -128,7 +130,7 @@ private:
         for (int i = 0; i <= 4; ++i) {
             const int y = y0 + (y1 - y0) * i / 4;
             canvas_.drawFastHLine(x0, y, x1 - x0 + 1, Grid);
-            std::snprintf(buffer, sizeof(buffer), "%.*f", metric == Metric::Temperature ? 1 : 0,
+            std::snprintf(buffer, sizeof(buffer), "%.*f", metric == Metric::Temperature || metric == Metric::Pressure ? 1 : 0,
                           high - (high - low) * i / 4);
             text(4, y - 3, buffer, 1, Muted);
         }

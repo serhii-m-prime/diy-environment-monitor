@@ -14,7 +14,7 @@ Run with a C++17 host compiler:
   display activity timeout, millis rollover and fan/sample scheduling.
 - `ui_tests.cpp` runs the production renderer against a recording canvas. Checks
   screen bounds, no rendering while off or clean, unchanged overview tiles and
-  missing-data graph gaps. Exports all six screen SVGs with synthetic readings.
+  missing-data graph gaps and pressure in mmHg. Exports all seven screen SVGs with synthetic readings.
   The installed Adafruit GFX bitmap font is used when available, otherwise SVG text.
 - `runtime_tests.cpp` executes the actual `setup()` and `loop()` with mocked
   mailboxes and TFT transport. Checks history collection while off, wake/navigation,

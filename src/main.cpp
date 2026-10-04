@@ -177,7 +177,8 @@ void loop() {
         const uint32_t left = nextInput.leftPresses - inputs.leftPresses;
         const uint32_t right = nextInput.rightPresses - inputs.rightPresses;
         pressed = left || right;
-        if (pressed) navigation.move(static_cast<int>(right % 6) - static_cast<int>(left % 6));
+        constexpr uint32_t pageCount = static_cast<uint32_t>(Page::Count);
+        if (pressed) navigation.move(static_cast<int>(right % pageCount) - static_cast<int>(left % pageCount));
         inputs = nextInput;
     }
     SensorSnapshot nextSensor;

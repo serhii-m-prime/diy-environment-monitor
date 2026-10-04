@@ -10,7 +10,7 @@ ESP32-S3 + ST7796S (480 x 320 landscape), MH-Z19, BME280, BH1750 and PIR.
   holding a button does not auto-repeat. Navigation wraps in both directions.
 - The old GPIO19 test button is no longer configured or used.
 - Screen order: environment overview, temperature, humidity, CO2, ambient light,
-  service diagnostics. Labels use the built-in ASCII bitmap font.
+  pressure (mmHg), service diagnostics. Labels use the built-in ASCII bitmap font.
 - The overview shows pressure in both hPa and mmHg (millimetres of mercury).
 
 The display is initially visible for 30 seconds. PIR motion keeps it on; a button
@@ -24,7 +24,8 @@ screen off.
 
 - Six hours, one point per minute, 361 records in a fixed RAM ring buffer.
 - Each record is at most 16 bytes: timestamp, temperature (0.01 C), humidity
-  (0.01%), CO2 (ppm), light (lux), and validity flags. The buffer uses about
+  (0.01%), CO2 (ppm), light (lux), pressure (0.1 hPa, converted to mmHg for the graph),
+  and validity flags. Pressure uses existing record padding, so the buffer still uses about
   **5.7 KiB of internal RAM** and does not require PSRAM.
 - No history writes to flash/NVS/filesystem. History is lost on reset or power loss.
 - Time axis is a trailing six-hour window with about 400 horizontal pixels.

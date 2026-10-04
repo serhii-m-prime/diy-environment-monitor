@@ -87,6 +87,7 @@ int main() {
         sample.humidity += 8 * std::sin(i / 30.0);
         sample.co2 += 300 * std::sin(i / 45.0);
         sample.light += 100 * std::sin(i / 50.0);
+        sample.pressure += 3 * std::sin(i / 80.0);
         if (i > 130 && i < 145) sample.valid = 0;
         history.append(HistoryPoint::from(i * 60, sample));
     }
@@ -102,6 +103,10 @@ int main() {
         assert(!ui.render(nav, r, history, HistorySeconds, diag) && c.operations == 0);
         nav.setOn(true);
         assert(ui.render(nav, r, history, HistorySeconds, diag));
+        if (page == static_cast<int>(Page::Pressure)) {
+            assert(std::find(c.labels.begin(), c.labels.end(), "760.0 mmHg") != c.labels.end());
+            assert(std::find(c.labels.begin(), c.labels.end(), "6/7") != c.labels.end());
+        }
         c.save(".pio/host-tests/screen-" + std::to_string(page) + ".svg");
         const int draws = c.operations;
         assert(!ui.render(nav, r, history, HistorySeconds, diag) && c.operations == draws);
@@ -110,10 +115,10 @@ int main() {
         nav.setOn(true);
         ui.render(nav, r, history, HistorySeconds, diag);
         if (page == 0) assert(c.operations == draws); // unchanged overview needs no pixel writes
-        else if (page < 5) assert(c.lines > 0 && c.pixels > 1);
+        else if (page < static_cast<int>(Page::Service)) assert(c.lines > 0 && c.pixels > 1);
     }
     // Empty, flat, invalid and discontinuous history must be drawable without bogus joins.
-    for (int metricPage = 1; metricPage <= 4; ++metricPage) {
+    for (int metricPage = 1; metricPage < static_cast<int>(Page::Service); ++metricPage) {
         Canvas c;
         MonitorUi<Canvas> ui(c);
         Navigation nav; nav.move(metricPage); nav.setOn(true);
@@ -129,5 +134,5 @@ int main() {
         nav.invalidate();
         ui.render(nav, r, sparse, HistorySeconds + 601, diag);
     }
-    std::puts("PASS: six screen layouts, off/clean render gating, graph gaps and SVG previews");
+    std::puts("PASS: seven screen layouts, pressure units, off/clean render gating, graph gaps and SVG previews");
 }

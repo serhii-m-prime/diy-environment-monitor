@@ -10,10 +10,12 @@ constexpr uint32_t SamplePeriodMs = 60000;
 constexpr uint32_t HistoryHours = 6;
 constexpr uint32_t HistorySeconds = HistoryHours * 3600;
 constexpr size_t HistoryCapacity = HistorySeconds / (SamplePeriodMs / 1000) + 1;
+// 1 mmHg = 133.322387415 Pa.
+constexpr float HpaToMmHg = 0.750061683f;
 
-enum Valid : uint8_t { Environment = 1, CO2 = 2, Light = 4 };
-enum class Page : uint8_t { Overview, Temperature, Humidity, CO2, Light, Service, Count };
-enum class Metric : uint8_t { Temperature, Humidity, CO2, Light };
+enum Valid : uint8_t { Environment = 1, CO2 = 2, Light = 4, Pressure = 8 };
+enum class Page : uint8_t { Overview, Temperature, Humidity, CO2, Light, Pressure, Service, Count };
+enum class Metric : uint8_t { Temperature, Humidity, CO2, Light, Pressure };
 
 struct Readings {
     float temperature = 0;
@@ -31,6 +33,7 @@ struct HistoryPoint {
     uint16_t humidity = 0; // hundredths of percent
     uint16_t co2 = 0;
     uint16_t light = 0; // lux
+    uint16_t pressure = 0; // tenths of hPa; fits in the existing record padding
     uint8_t valid = 0;
 
     bool value(Metric metric, float &out) const {
@@ -39,6 +42,7 @@ struct HistoryPoint {
         case Metric::Humidity: out = humidity / 100.0f; return valid & Environment;
         case Metric::CO2: out = co2; return valid & CO2;
         case Metric::Light: out = light; return valid & Light;
+        case Metric::Pressure: out = pressure * 0.1f * HpaToMmHg; return valid & Pressure;
         }
         return false;
     }
@@ -60,6 +64,10 @@ struct HistoryPoint {
         if ((r.valid & Light) && std::isfinite(r.light) && r.light >= 0 && r.light <= 65535) {
             p.light = static_cast<uint16_t>(std::lround(r.light));
             p.valid |= Light;
+        }
+        if ((r.valid & Environment) && std::isfinite(r.pressure) && r.pressure >= 300 && r.pressure <= 1100) {
+            p.pressure = static_cast<uint16_t>(std::lround(r.pressure * 10));
+            p.valid |= Pressure;
         }
         return p;
     }
