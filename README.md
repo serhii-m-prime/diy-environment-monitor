@@ -12,6 +12,8 @@ ESP32-S3 + ST7796S (480 x 320 landscape), MH-Z19, BME280, BH1750 and PIR.
 - Screen order: environment overview, temperature, humidity, CO2, ambient light,
   pressure (mmHg), service diagnostics. Labels use the built-in ASCII bitmap font.
 - The overview shows pressure in both hPa and mmHg (millimetres of mercury).
+  Its four tiles use large centered readings with inline units; long values shrink
+  to fit within the card. Labels stay in place during numeric updates.
 - Temperature, humidity and CO2 graphs color each historical segment and the latest
   reading green/yellow/red using [documented guidance and sources](docs/measurement-colors.md).
   These are project advisory bands, not universal WHO safety limits. Ambient light
@@ -57,8 +59,9 @@ Sensor collection and target updates continue with the screen off.
   subsequent samples normally start every minute. Values show N/A before the first
   sample. The 2-second settling delay must be checked against physical fan spin-down.
 - Only the selected screen is rendered, and only while the display is enabled.
-  The overview updates changed tiles; graphs update with history/page/wake events;
-  the service screen refreshes once per second. No full-screen framebuffer.
+  The overview updates only the numeric band of changed tiles; graphs update with
+  history/page/wake events; the service screen refreshes once per second.
+  No full-screen framebuffer.
 - Buttons and PIR are polled every 10 ms in a dedicated task. A separate task owns
   I2C/UART and the sensors. The Arduino loop alone owns the TFT, history and UI.
   Fixed-size, one-element FreeRTOS queues transfer snapshots without sharing

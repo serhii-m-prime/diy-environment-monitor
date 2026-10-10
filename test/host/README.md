@@ -25,6 +25,8 @@ Run with a C++17 host compiler:
   screen bounds, no rendering while off or clean, unchanged overview tiles and
   missing-data graph gaps and pressure in mmHg. Exports all seven screen SVGs with synthetic readings.
   The installed Adafruit GFX bitmap font is used when available, otherwise SVG text.
+  Overview checks include text containment and overlap at normal/maximum readings,
+  negative temperature and N/A, plus previews of partial updates after digit-count changes.
   Also checks rising/falling multi-band transitions, flat boundary values,
   invalid data colors, unavailable pressure trends and colored isolated samples.
   Pressure previews cover historical tendency bands, min/max/span, rising/falling

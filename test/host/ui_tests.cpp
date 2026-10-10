@@ -18,6 +18,8 @@ struct Canvas {
     std::vector<uint16_t> textColors, lineColors, pixelColors;
     struct Segment { int x0, y0, x1, y1; };
     std::vector<Segment> segments;
+    struct TextBox { int x, y, width, height; };
+    std::vector<TextBox> textBoxes;
     void setTextWrap(bool) {}
     void setCursor(int a, int b) { x = a; y = b; }
     void setTextSize(int s) { size = s; }
@@ -49,7 +51,9 @@ struct Canvas {
                std::to_string(c) + "' y2='" + std::to_string(d) + "' stroke='" + rgb(col) + "'/>\n";
     }
     void print(const char *s) {
-        bounds(x, y, static_cast<int>(std::strlen(s)) * 6 * size, 8 * size);
+        const int width = static_cast<int>(std::strlen(s)) * 6 * size;
+        bounds(x, y, width, 8 * size);
+        textBoxes.push_back({x, y, width, 8 * size});
         labels.push_back(s);
         textColors.push_back(color);
 #ifdef PREVIEW_BITMAP_FONT
@@ -81,6 +85,24 @@ struct Canvas {
     }
 };
 
+// Text must fit its own card, not merely the display, and must not overlap.
+static void checkOverviewText(const Canvas &canvas) {
+    const auto &boxes = canvas.textBoxes;
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        const auto &a = boxes[i];
+        if (a.y < 55 || a.y >= 248) continue;
+        const int left = a.x < 246 ? 12 : 246;
+        const int top = a.y < 157 ? 55 : 157;
+        assert(a.x >= left && a.x + a.width <= left + 222);
+        assert(a.y >= top && a.y + a.height <= top + 91);
+        for (size_t j = i + 1; j < boxes.size(); ++j) {
+            const auto &b = boxes[j];
+            assert(a.x + a.width <= b.x || b.x + b.width <= a.x ||
+                   a.y + a.height <= b.y || b.y + b.height <= a.y);
+        }
+    }
+}
+
 int main() {
     using namespace monitor;
     Readings r;
@@ -111,6 +133,7 @@ int main() {
         assert(!ui.render(nav, r, history, HistorySeconds, diag) && c.operations == 0);
         nav.setOn(true);
         assert(ui.render(nav, r, history, HistorySeconds, diag));
+        if (page == 0) checkOverviewText(c);
         if (page == static_cast<int>(Page::Pressure)) {
             assert(std::find(c.labels.begin(), c.labels.end(), "760.0 mmHg") != c.labels.end());
             assert(std::find(c.labels.begin(), c.labels.end(), "6/7") != c.labels.end());
@@ -128,6 +151,26 @@ int main() {
         ui.render(nav, r, history, HistorySeconds, diag);
         if (page == 0) assert(c.operations == draws); // unchanged overview needs no pixel writes
         else if (page < static_cast<int>(Page::Service)) assert(c.lines > 0 && c.pixels > 1);
+    }
+    // Exercise changed digit counts, negative values, upper sensor ranges and N/A
+    // through partial updates, so the previews also expose uncleared old glyphs.
+    {
+        Canvas c;
+        MonitorUi<Canvas> ui(c);
+        Navigation nav; nav.setOn(true);
+        ui.render(nav, r, history, HistorySeconds, diag);
+        auto wide = r;
+        wide.temperature = -40; wide.humidity = 100; wide.co2 = 65535; wide.light = 65535;
+        const Readings samples[] = {wide, r, Readings{}};
+        const char *names[] = {"overview-wide", "overview-updated", "overview-empty"};
+        for (size_t i = 0; i < 3; ++i) {
+            c.textBoxes.clear(); c.labels.clear();
+            nav.invalidate();
+            assert(ui.render(nav, samples[i], history, HistorySeconds, diag));
+            checkOverviewText(c);
+            assert(std::find(c.labels.begin(), c.labels.end(), "TEMPERATURE") == c.labels.end());
+            c.save(std::string(".pio/host-tests/") + names[i] + ".svg");
+        }
     }
     // Empty, flat, invalid and discontinuous history must be drawable without bogus joins.
     for (int metricPage = 1; metricPage < static_cast<int>(Page::Service); ++metricPage) {

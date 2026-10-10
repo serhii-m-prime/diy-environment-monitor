@@ -5,6 +5,7 @@
 #include <PressureTrend.h>
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 namespace monitor {
 
@@ -69,25 +70,39 @@ private:
         text(426, 302, "RIGHT >", 1, Muted);
     }
     void tile(int x, int y, const char *name, float value, bool valid, const char *unit,
-              int decimals, uint16_t color) {
-        canvas_.fillRect(x, y, 222, 91, Panel);
-        text(x + 12, y + 10, name, 1, Muted);
+              int decimals, uint16_t color, bool force) {
+        if (force) {
+            canvas_.fillRect(x, y, 222, 91, Panel);
+            text(x + 10, y + 8, name, 2, Foreground);
+        } else {
+            // Keep the label in place and erase the full old value, including its unit.
+            canvas_.fillRect(x + 8, y + 29, 206, 60, Panel);
+        }
         char buffer[24];
         if (valid) std::snprintf(buffer, sizeof(buffer), "%.*f", decimals, value);
         else std::snprintf(buffer, sizeof(buffer), "N/A");
-        text(x + 12, y + 30, buffer, 3, color);
-        text(x + 12, y + 68, unit, 1, Muted);
+        constexpr int unitSize = 2, gap = 8;
+        const int characters = static_cast<int>(std::strlen(buffer));
+        const int suffixWidth = valid ? gap + static_cast<int>(std::strlen(unit)) * 6 * unitSize : 0;
+        int valueSize = valid ? 7 : 5;
+        // GFX's built-in font uses 6x8 cells; long readings must stay inside the tile.
+        while (valueSize > 1 && characters * 6 * valueSize + suffixWidth > 202) --valueSize;
+        const int valueWidth = characters * 6 * valueSize;
+        const int startX = x + (222 - valueWidth - suffixWidth) / 2;
+        const int valueY = y + 30 + (7 - valueSize) * 4;
+        text(startX, valueY, buffer, valueSize, valid ? color : Muted);
+        if (valid) text(startX + valueWidth + gap, valueY + 7 * (valueSize - unitSize), unit, unitSize, Muted);
     }
     void overview(const Readings &r, bool force) {
         const uint8_t changes = previous_.valid ^ r.valid;
         if (force || (changes & Environment) || r.temperature != previous_.temperature)
-            tile(12, 55, "TEMPERATURE", r.temperature, r.valid & Environment, "Celsius", 1, 0xfd69);
+            tile(12, 55, "TEMPERATURE", r.temperature, r.valid & Environment, "C", 1, 0xfd69, force);
         if (force || (changes & Environment) || r.humidity != previous_.humidity)
-            tile(246, 55, "HUMIDITY", r.humidity, r.valid & Environment, "% relative", 1, 0x6ddf);
+            tile(246, 55, "HUMIDITY", r.humidity, r.valid & Environment, "%", 1, 0x6ddf, force);
         if (force || (changes & CO2) || r.co2 != previous_.co2)
-            tile(12, 157, "CO2", r.co2, r.valid & CO2, "ppm", 0, Accent);
+            tile(12, 157, "CO2", r.co2, r.valid & CO2, "ppm", 0, Accent, force);
         if (force || (changes & Light) || r.light != previous_.light)
-            tile(246, 157, "AMBIENT LIGHT", r.light, r.valid & Light, "lux / auto brightness", 0, 0xff16);
+            tile(246, 157, "AMBIENT LIGHT", r.light, r.valid & Light, "lux", 0, 0xff16, force);
         if (force || (changes & Environment) || r.pressure != previous_.pressure) {
             canvas_.fillRect(12, 262, 456, 24, Background);
             char buffer[40];
