@@ -168,35 +168,36 @@ private:
         char buffer[64];
         if (trend.valid) {
             std::snprintf(buffer, sizeof(buffer), "3h %+.2f mmHg", trend.deltaHpa * HpaToMmHg);
-            text(64, 90, buffer, 2, color);
+            text(252, 52, buffer, 2, color);
             const int direction = trend.direction();
             const char *speed = trend.guidance() == Guidance::Attention ? "rapid" :
                                 trend.guidance() == Guidance::Watch ? "noticeable" : "slow";
             if (!direction) std::snprintf(buffer, sizeof(buffer), "Steady");
             else std::snprintf(buffer, sizeof(buffer), "%s / %s", direction > 0 ? "Rising" : "Falling", speed);
-            text(268, 94, buffer, 1, color);
+            text(252, 74, buffer, 1, color);
             // Draw the arrow ourselves: the built-in font has no Unicode arrows.
             if (direction) {
-                canvas_.drawFastVLine(448, 64, 20, color);
+                canvas_.drawFastVLine(456, 52, 20, color);
                 for (int i = 0; i < 6; ++i)
-                    canvas_.drawFastHLine(448 - i, direction > 0 ? 64 + i : 83 - i, 2 * i + 1, color);
+                    canvas_.drawFastHLine(456 - i, direction > 0 ? 52 + i : 71 - i, 2 * i + 1, color);
             } else {
-                canvas_.drawFastHLine(442, 69, 13, color);
-                canvas_.drawFastHLine(442, 77, 13, color);
+                canvas_.drawFastHLine(450, 57, 13, color);
+                canvas_.drawFastHLine(450, 65, 13, color);
             }
-        } else text(64, 90, valid ? "3h: insufficient data" : "3h: no valid pressure", 1, Muted);
+        } else text(252, 60, valid ? "3h: insufficient data" : "3h: no valid pressure", 1, Muted);
         if (count) {
-            std::snprintf(buffer, sizeof(buffer), "6h available: min %.1f max %.1f mmHg", low, high);
-            text(64, 112, buffer, 1, Muted);
+            std::snprintf(buffer, sizeof(buffer), "6h min %.1f max %.1f mmHg", low, high);
+            text(42, 286, buffer, 1, Muted);
             std::snprintf(buffer, sizeof(buffer), "Span %.2f mmHg", high - low);
-            text(64, 123, buffer, 1, Muted);
-        } else text(64, 112, "6h available: min/max/span N/A", 1, Muted);
+            text(300, 286, buffer, 1, Muted);
+        } else text(42, 286, "6h min/max/span N/A", 1, Muted);
     }
     void graph(Metric metric, const Readings &r, const History &history, uint32_t now) {
-        constexpr int x0 = 64, x1 = 464, y1 = 258;
         const bool pressure = metric == Metric::Pressure;
-        const int y0 = pressure ? 136 : 104;
-        canvas_.fillRect(0, 50, 480, 242, Background);
+        // Pressure uses a compact summary above and statistics below the plot.
+        const int x0 = pressure ? 42 : 64, x1 = pressure ? 468 : 464;
+        const int y0 = pressure ? 86 : 104, y1 = pressure ? 266 : 258;
+        canvas_.fillRect(0, 50, 480, pressure ? 252 : 242, Background);
         float latest = 0;
         const bool valid = HistoryPoint::from(now, r).value(metric, latest);
         const char *unit = metric == Metric::Temperature ? "C" :
@@ -207,7 +208,7 @@ private:
                                 metric == Metric::Temperature || metric == Metric::Humidity || metric == Metric::Pressure ? 1 : 0, latest, unit);
         else std::snprintf(buffer, sizeof(buffer), "N/A");
         const Guidance level = valid ? measurementGuidance(metric, latest) : Guidance::Unavailable;
-        text(64, 61, buffer, 3, guidanceColor(level));
+        text(pressure ? 12 : 64, pressure ? 52 : 61, buffer, 3, guidanceColor(level));
         if (!pressure) text(64, 90, guidanceLabel(metric, level, latest), 1, guidanceColor(level));
 
         float low = 0, high = 0;
@@ -238,9 +239,10 @@ private:
         }
         for (int i = 0; i <= 6; ++i)
             canvas_.drawFastVLine(x0 + (x1 - x0) * i / 6, y0, y1 - y0 + 1, Grid);
-        text(x0, 269, "-6h", 1, Muted);
-        text((x0 + x1) / 2 - 9, 269, "-3h", 1, Muted);
-        text(x1 - 18, 269, "now", 1, Muted);
+        const int timeY = pressure ? 273 : 269;
+        text(x0, timeY, "-6h", 1, Muted);
+        text((x0 + x1) / 2 - 9, timeY, "-3h", 1, Muted);
+        text(x1 - 18, timeY, "now", 1, Muted);
 
         bool connected = false;
         int lastX = 0, lastY = 0;
@@ -270,10 +272,10 @@ private:
         }
         if (!validCount) text(154, 178, "No history yet", 2, Muted);
         if (pressure) {
-            text(64, 287, "Small", 1, Reference);
-            text(160, 287, "Noticeable", 1, Watch);
-            text(268, 287, "Rapid", 1, Attention);
-            text(366, 287, "No trend", 1, Neutral);
+            text(88, 302, "Small", 1, Reference);
+            text(158, 302, "Noticeable", 1, Watch);
+            text(248, 302, "Rapid", 1, Attention);
+            text(318, 302, "No trend", 1, Neutral);
         } else if (guidanceEdges(metric).count) {
             text(64, 287, "Reference", 1, Reference);
             text(160, 287, "Watch", 1, Watch);

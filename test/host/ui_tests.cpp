@@ -181,6 +181,7 @@ int main() {
         ui.render(nav, Readings{}, sparse, 600, diag);
         auto missing = std::find(c.labels.begin(), c.labels.end(), "N/A");
         assert(missing != c.labels.end() && c.textColors[missing - c.labels.begin()] == gray);
+        if (metricPage == static_cast<int>(Page::Pressure)) c.save(".pio/host-tests/pressure-empty.svg");
         sparse.append(HistoryPoint::from(0, r));
         sparse.append(HistoryPoint::from(60, Readings{}));
         sparse.append(HistoryPoint::from(120, r));
@@ -272,9 +273,9 @@ int main() {
         assert(std::find(c.labels.begin(), c.labels.end(), sign > 0 ? "Rising / rapid" : "Falling / rapid") != c.labels.end());
         assert(std::find(c.labels.begin(), c.labels.end(), "Span 6.75 mmHg") != c.labels.end());
         assert(std::find(c.labels.begin(), c.labels.end(), sign > 0 ?
-            "6h available: min 750.1 max 756.8 mmHg" : "6h available: min 743.3 max 750.1 mmHg") != c.labels.end());
+            "6h min 750.1 max 756.8 mmHg" : "6h min 743.3 max 750.1 mmHg") != c.labels.end());
         assert(c.lineColors.front() == blue && c.lineColors.back() == red);
-        assert(c.segments.front().y0 >= 136 && c.segments.back().y1 <= 258);
+        assert(c.segments.front().y0 >= 86 && c.segments.back().y1 <= 266);
         c.save(sign > 0 ? ".pio/host-tests/pressure-rising.svg" : ".pio/host-tests/pressure-falling.svg");
         const int before = c.operations;
         nav.setOn(false); nav.invalidate();
@@ -307,7 +308,7 @@ int main() {
         sample.pressure = 1100; expired.append(HistoryPoint::from(0, sample));
         sample.pressure = 1000; expired.append(HistoryPoint::from(60, sample));
         ui.render(nav, sample, expired, HistorySeconds + 1, diag);
-        assert(std::find(c.labels.begin(), c.labels.end(), "6h available: min 750.1 max 750.1 mmHg") != c.labels.end());
+        assert(std::find(c.labels.begin(), c.labels.end(), "6h min 750.1 max 750.1 mmHg") != c.labels.end());
         assert(std::find(c.labels.begin(), c.labels.end(), "Span 0.00 mmHg") != c.labels.end());
         assert(c.lines == 0 && c.pixels == 1); // old high pressure is excluded from plot and stats
     }
