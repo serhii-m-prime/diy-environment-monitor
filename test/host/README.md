@@ -17,6 +17,10 @@ Run with a C++17 host compiler:
   intensity/direction boundaries, warm-up, stale/invalid/missing samples, timestamp
   jitter, circular overwrite and timer rollover. This target uses C++11, matching
   the firmware's language standard.
+- `brightness_tests.cpp` (C++11) covers deadband boundaries, transient shadows,
+  confirmation/reset, smooth monotonic ramps, invalid data, saturation, sleep/wake
+  and clock rollover. Runtime tests also verify that repeated light snapshots do
+  not satisfy confirmation and PWM changes alone never redraw the selected page.
 - `ui_tests.cpp` runs the production renderer against a recording canvas. Checks
   screen bounds, no rendering while off or clean, unchanged overview tiles and
   missing-data graph gaps and pressure in mmHg. Exports all seven screen SVGs with synthetic readings.

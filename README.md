@@ -22,10 +22,18 @@ ESP32-S3 + ST7796S (480 x 320 landscape), MH-Z19, BME280, BH1750 and PIR.
 
 The display is initially visible for 30 seconds. PIR motion keeps it on; a button
 press wakes it and changes the page. After motion ends or the last button press,
-there is a 30-second grace period. BH1750 controls brightness once per second.
-A failed light reading retains the last valid brightness; before any valid reading
-there is a fixed fallback duty of 240/4095. Sensor collection continues with the
-screen off.
+there is a 30-second grace period. BH1750 is sampled once per second. Backlight
+control has a 15% deadband around the accepted target (at least 3 lux), then requires
+three fresh readings in the same direction spanning at least 2 seconds. Brief shadows
+and repeated worker snapshots do not change the target. Invalid readings or gaps
+over 1.5 seconds cancel pending confirmation and retain the accepted target.
+
+PWM approaches the target smoothly in the main loop (1.2-second time constant),
+without redrawing the UI. Wake-up fades in faster; sleep turns the backlight off
+immediately. A delayed loop advances at most 50 ms of the ramp to avoid a catch-up
+flash. Before the first valid reading the target is 240/4095; output remains limited
+to 3..4095 when settled and enabled. Raw lux values and history are unchanged.
+Sensor collection and target updates continue with the screen off.
 
 ## History and rendering
 
@@ -76,7 +84,8 @@ subsequent minute samples. BH1750 initialization is retried after errors every 3
 | TFT backlight | 5 |
 | Fan PWM | 6 |
 
-The PlatformIO profile is `esp32-s3-devkitc-1` (8 MB flash, no PSRAM).
+The PlatformIO profile is `esp32-s3-devkitc-1` (8 MB flash, no PSRAM), pinned to
+`platformio/espressif32@6.13.0` (Arduino ESP32 2.0.17, including the LEDC channel API).
 Physical wiring and the exact module variant must match your hardware.
 
 ## Build and verify

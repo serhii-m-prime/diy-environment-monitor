@@ -145,8 +145,8 @@ struct InputSnapshot {
 struct SensorSnapshot {
     Readings readings;
     HistoryPoint historyPoint;
-    uint32_t historySequence = 0, measurementUs = 0, errors = 0;
-    bool lightSeen = false, fanOn = false;
+    uint32_t historySequence = 0, lightSequence = 0, measurementUs = 0, errors = 0;
+    bool fanOn = false;
 };
 
 class DisplayActivity {

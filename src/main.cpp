@@ -9,6 +9,7 @@
 #include <TempHumPressSensor_BME280.h>
 #include <LightSensor_BH1750.h>
 #include <MonitorUi.h>
+#include <DisplayBrightness.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -32,6 +33,7 @@ Navigation navigation;
 History history;
 Uptime uptime;
 DisplayActivity activity;
+DisplayBrightness backlight;
 Diagnostics diagnostics;
 InputSnapshot inputs;
 SensorSnapshot sensors;
@@ -106,6 +108,7 @@ void sensorTask(void *) {
         }
         if (sampleDue || uint32_t(now - lastLight) >= LightPeriodMs) {
             lastLight = now;
+            ++snapshot.lightSequence;
             if (!(snapshot.readings.valid & Light) && uint32_t(now - lastLightRetry) >= LightRetryMs) {
                 light.begin();
                 lastLightRetry = now;
@@ -114,7 +117,6 @@ void sensorTask(void *) {
             if (auto data = static_cast<LightData *>(light.getData())) {
                 snapshot.readings.light = data->lux;
                 snapshot.readings.valid |= Light;
-                snapshot.lightSeen = true;
             } else ++snapshot.errors;
             publish = true;
         }
@@ -132,12 +134,6 @@ void sensorTask(void *) {
     }
 }
 
-uint16_t brightness() {
-    if (!navigation.isOn()) return 0;
-    // Before the first valid light sample use a modest, readable fixed brightness.
-    const float lux = sensors.lightSeen ? sensors.readings.light : 60.0f;
-    return static_cast<uint16_t>(std::max(3.0f, std::min(4095.0f, lux * 4.0f)));
-}
 } // namespace
 
 void setup() {
@@ -184,6 +180,8 @@ void loop() {
     }
     SensorSnapshot nextSensor;
     if (xQueueReceive(sensorMailbox, &nextSensor, 0) == pdTRUE) {
+        if (nextSensor.lightSequence != sensors.lightSequence)
+            backlight.observe(nextSensor.readings.light, nextSensor.readings.valid & Light, now);
         if (nextSensor.historySequence != sensors.historySequence) {
             history.append(nextSensor.historyPoint);
             navigation.invalidate();
@@ -216,7 +214,7 @@ void loop() {
     pressureFreshPreviously = pressureFresh;
     diagnostics.motion = inputs.motion;
     diagnostics.fanOn = sensors.fanOn;
-    diagnostics.brightness = brightness();
+    diagnostics.brightness = backlight.update(millis(), navigation.isOn());
     diagnostics.sensorUs = sensors.measurementUs;
     diagnostics.sensorErrors = sensors.errors;
     diagnostics.uptimeSeconds = uptime.seconds();

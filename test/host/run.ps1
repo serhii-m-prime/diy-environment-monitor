@@ -21,6 +21,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Pressure test compilation failed' }
     & ./.pio/host-tests/pressure_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'Pressure tests failed' }
+    & $Cxx -std=c++11 -Wall -Wextra -Ilib/App test/host/brightness_tests.cpp `
+        -o .pio/host-tests/brightness_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Brightness test compilation failed' }
+    & ./.pio/host-tests/brightness_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Brightness tests failed' }
     & $Cxx -std=c++17 -Wall -Wextra -Ilib/App '-I.pio/libdeps/esp32-s3-debug/Adafruit GFX Library' test/host/ui_tests.cpp `
         -o .pio/host-tests/ui_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'UI test compilation failed' }
