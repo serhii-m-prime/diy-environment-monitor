@@ -17,6 +17,9 @@ Run with a C++17 host compiler:
   intensity/direction boundaries, warm-up, stale/invalid/missing samples, timestamp
   jitter, circular overwrite and timer rollover. This target uses C++11, matching
   the firmware's language standard.
+- `history_average_tests.cpp` (C++11) covers three-minute means, signed rounding,
+  per-channel invalid data, missed samples, duplicate/out-of-order snapshots,
+  outage recovery and timestamp rollover.
 - `brightness_tests.cpp` (C++11) covers deadband boundaries, transient shadows,
   confirmation/reset, smooth monotonic ramps, invalid data, saturation, sleep/wake
   and clock rollover. Runtime tests also verify that repeated light snapshots do

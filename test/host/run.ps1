@@ -16,6 +16,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Monitor test compilation failed' }
     & ./.pio/host-tests/monitor_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'Monitor tests failed' }
+    & $Cxx -std=c++11 -Wall -Wextra -Ilib/App test/host/history_average_tests.cpp `
+        -o .pio/host-tests/history_average_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'History average test compilation failed' }
+    & ./.pio/host-tests/history_average_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'History average tests failed' }
     & $Cxx -std=c++11 -Wall -Wextra -Ilib/App test/host/pressure_tests.cpp `
         -o .pio/host-tests/pressure_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'Pressure test compilation failed' }

@@ -7,6 +7,9 @@
 namespace monitor {
 
 constexpr uint32_t SamplePeriodMs = 60000;
+constexpr uint32_t SampleMaxGapSeconds = SamplePeriodMs / 1000 * 3 / 2;
+constexpr size_t HistorySamplesPerPoint = 3;
+constexpr uint32_t HistoryPeriodSeconds = SamplePeriodMs / 1000 * HistorySamplesPerPoint;
 constexpr uint32_t HistoryHours = 6;
 constexpr uint32_t HistorySeconds = HistoryHours * 3600;
 constexpr size_t HistoryCapacity = HistorySeconds / (SamplePeriodMs / 1000) + 1;
