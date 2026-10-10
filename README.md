@@ -20,7 +20,7 @@ ESP32-S3 + ST7796S (480 x 320 landscape), MH-Z19, BME280, BH1750 and PIR.
   remains neutral blue. Pressure graph colors indicate the magnitude of its 3-hour
   change: <=1.5 hPa green, >1.5 to 3.5 hPa yellow, >3.5 hPa red, in either direction.
   The pressure screen shows the signed change in mmHg, direction, and min/max/span
-  of available readings over six hours. The absolute pressure number stays blue.
+  of available three-minute averages over 24 hours. The absolute pressure number stays blue.
   Its plot spans 426 x 180 pixels, with the current value and 3-hour change above,
   statistics below and the color legend between the navigation labels.
 
@@ -41,18 +41,27 @@ Sensor collection and target updates continue with the screen off.
 
 ## History and rendering
 
-- Six hours, one point per minute, 361 records in a fixed RAM ring buffer.
+- 24 hours, one point per three minutes, 481 records in a fixed RAM ring buffer.
+  Environment/CO2 measurements and live numbers still update every minute.
+  Each history point averages three consecutive minute samples; the first point
+  appears after the third measurement and is timestamped at that group's last sample.
+  Every channel needs all three valid readings; a sensor failure invalidates only
+  that channel. A missed minute invalidates the group, including gaps between groups.
+  Duplicate/out-of-order snapshots do not contribute; partial groups are not stored.
 - Each record is at most 16 bytes: timestamp, temperature (0.01 C), humidity
   (0.01%), CO2 (ppm), light (lux), pressure (0.1 hPa, converted to mmHg for the graph),
-  and validity flags. Pressure uses existing record padding, so the buffer still uses about
-  **5.7 KiB of internal RAM** and does not require PSRAM.
+  and validity flags. The buffer and indices use **7,704 bytes of internal RAM**
+  on ESP32, plus 28 bytes for averaging, and do not require PSRAM.
 - No history writes to flash/NVS/filesystem. History is lost on reset or power loss.
-- Time axis is a trailing six-hour window with about 400 horizontal pixels.
+- Time axis is a trailing 24-hour window with about 400 horizontal pixels.
   Vertical scale follows the valid data with a minimum span for nearly flat traces.
-  Invalid readings and gaps over 90 seconds break the line; no synthetic backfill.
-- Pressure tendency compares two means of five consecutive minute samples, about
-  three hours apart. It requires valid endpoint windows and a recent sample;
-  unavailable trends are blue. Initial warm-up is 3 h 4 min after the first sample.
+  Invalid averages and gaps over 270 seconds break the line; no synthetic backfill.
+  Brief peaks are smoothed; min/max/span describe stored means, not raw extrema.
+- Pressure tendency compares means of two adjacent history points (six minute
+  measurements per endpoint), about three hours apart. It requires complete valid
+  endpoint windows and a stored point no older than 270 seconds; unavailable trends
+  are blue. Initial warm-up is 3 h 3 min after the first stored point, or 3 h 5 min
+  after the first raw measurement under normal sampling.
   The oldest approximately three hours of a full buffer have no earlier reference
   and remain blue. Analysis uses O(N) time and constant working memory; no new buffer.
 - The fan runs for 15 seconds, then stops for 2 seconds before each environment/CO2
@@ -62,7 +71,7 @@ Sensor collection and target updates continue with the screen off.
   sample. The 2-second settling delay must be checked against physical fan spin-down.
 - Only the selected screen is rendered, and only while the display is enabled.
   The overview updates only the numeric band of changed tiles; graphs update with
-  history/page/wake events; the service screen refreshes once per second.
+  fresh measurements/page/wake events; the service screen refreshes once per second.
   No full-screen framebuffer.
 - Buttons and PIR are polled every 10 ms in a dedicated task. A separate task owns
   I2C/UART and the sensors. The Arduino loop alone owns the TFT, history and UI.
@@ -108,6 +117,6 @@ They generate SVG previews in `.pio/host-tests`; with the downloaded Adafruit GF
 library present, the previews use the same bitmap font as the device.
 
 On hardware, check both buttons during CO2 timeouts and TFT redraws, PIR wake/sleep,
-brightness and light-sensor disconnection, six-hour history retention/overwrite,
+brightness and light-sensor disconnection, 24-hour history retention/overwrite,
 and actual render/loop timing. Desktop tests do not prove electrical behavior or
 physical display refresh performance.

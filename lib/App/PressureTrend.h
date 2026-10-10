@@ -4,11 +4,12 @@
 
 namespace monitor {
 
-// Five consecutive minute samples at each end; the reference ends 3 h earlier.
+// Two consecutive three-minute means at each end (six raw samples per endpoint);
+// the reference ends 3 h earlier.
 // Only the existing RAM history is used. See docs/measurement-colors.md.
 constexpr uint32_t PressureTrendSeconds = 3 * 3600;
-constexpr uint32_t PressureTrendToleranceSeconds = 90;
-constexpr size_t PressureMeanSamples = 5;
+constexpr uint32_t PressureTrendToleranceSeconds = HistoryMaxGapSeconds;
+constexpr size_t PressureMeanSamples = 2;
 
 struct PressureTrend {
     float deltaHpa = 0;
@@ -25,7 +26,7 @@ struct PressureTrend {
 };
 
 // Visit indices in chronological order. The reference cursor advances at most N
-// times and each mean reads five points: O(N) for the entire graph, O(1) storage.
+// times and each mean reads two points: O(N) for the entire graph, O(1) storage.
 class PressureTrendSeries {
 public:
     explicit PressureTrendSeries(const History &history) : history_(history) {}
@@ -57,13 +58,12 @@ private:
     bool meanSum(size_t last, uint32_t &sum) const {
         if (last + 1 < PressureMeanSamples) return false;
         const size_t first = last + 1 - PressureMeanSamples;
-        if (uint32_t(history_.at(last).seconds - history_.at(first).seconds) > 300) return false;
         for (size_t i = first; i <= last; ++i) {
             const auto &p = history_.at(i);
             if (!(p.valid & Pressure)) return false;
             if (i > first) {
                 const uint32_t gap = p.seconds - history_.at(i - 1).seconds;
-                if (gap < 30 || gap > PressureTrendToleranceSeconds) return false;
+                if (gap < HistoryPeriodSeconds / 2 || gap > HistoryMaxGapSeconds) return false;
             }
             sum += p.pressure;
         }

@@ -65,13 +65,16 @@ int main() {
     r.co2 = -1; r.light = -1;
     assert(HistoryPoint::from(120, r).valid == 0);
     History history;
+    static_assert(HistoryCapacity == 481 && HistorySeconds == 86400, "Expected a full day at three-minute spacing");
+    static_assert(SamplePeriodMs == 60000, "Live measurement cadence must remain one minute");
+    static_assert(sizeof(History) == 481 * 16 + 2 * sizeof(size_t), "Unexpected history RAM growth");
     assert(history.size() == 0);
     for (size_t i = 0; i < HistoryCapacity + 20; ++i) {
-        p.seconds = static_cast<uint32_t>(i * 60);
+        p.seconds = static_cast<uint32_t>(i * HistoryPeriodSeconds);
         history.append(p);
     }
     assert(history.size() == HistoryCapacity);
-    assert(history.at(0).seconds == 20 * 60);
+    assert(history.at(0).seconds == 20 * HistoryPeriodSeconds);
     assert(history.at(HistoryCapacity - 1).seconds - history.at(0).seconds == HistorySeconds);
     Navigation nav;
     assert(!nav.needsRender());

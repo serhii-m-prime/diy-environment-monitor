@@ -10,6 +10,7 @@
 #include <LightSensor_BH1750.h>
 #include <MonitorUi.h>
 #include <DisplayBrightness.h>
+#include <HistoryAverage.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -31,6 +32,7 @@ Adafruit_ST7796S display(&displaySpi, TftCs, TftDc, TftReset);
 MonitorUi<Adafruit_ST7796S> ui(display);
 Navigation navigation;
 History history;
+HistoryAverage historyAverage;
 Uptime uptime;
 DisplayActivity activity;
 DisplayBrightness backlight;
@@ -122,8 +124,8 @@ void sensorTask(void *) {
         }
         if (sampleDue) {
             sensorUptime.tick(millis());
-            snapshot.historyPoint = HistoryPoint::from(sensorUptime.seconds(), snapshot.readings);
-            ++snapshot.historySequence;
+            snapshot.samplePoint = HistoryPoint::from(sensorUptime.seconds(), snapshot.readings);
+            ++snapshot.sampleSequence;
             schedule.sampled(now);
             snapshot.fanOn = false;
             ledcWrite(FanChannel, 0);
@@ -182,8 +184,10 @@ void loop() {
     if (xQueueReceive(sensorMailbox, &nextSensor, 0) == pdTRUE) {
         if (nextSensor.lightSequence != sensors.lightSequence)
             backlight.observe(nextSensor.readings.light, nextSensor.readings.valid & Light, now);
-        if (nextSensor.historySequence != sensors.historySequence) {
-            history.append(nextSensor.historyPoint);
+        if (nextSensor.sampleSequence != sensors.sampleSequence) {
+            HistoryPoint averaged;
+            if (historyAverage.add(nextSensor.samplePoint, averaged)) history.append(averaged);
+            // Live readings stay fresh every minute; history advances every third sample.
             navigation.invalidate();
         }
         if (navigation.page() == Page::Overview ||
@@ -218,7 +222,7 @@ void loop() {
     diagnostics.sensorUs = sensors.measurementUs;
     diagnostics.sensorErrors = sensors.errors;
     diagnostics.uptimeSeconds = uptime.seconds();
-    diagnostics.sampleAgeSeconds = history.size() ? uptime.seconds() - sensors.historyPoint.seconds : 0;
+    diagnostics.sampleAgeSeconds = sensors.sampleSequence ? uptime.seconds() - sensors.samplePoint.seconds : 0;
     if (navigation.needsRender()) {
         diagnostics.freeHeap = ESP.getFreeHeap();
         diagnostics.minHeap = ESP.getMinFreeHeap();

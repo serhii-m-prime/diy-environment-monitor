@@ -109,16 +109,16 @@ int main() {
     r.valid = Environment | CO2 | Light;
     r.temperature = 23.7f; r.humidity = 48.2f; r.co2 = 824; r.light = 135; r.pressure = 1013.2f;
     History history;
-    for (unsigned i = 0; i <= 360; ++i) {
+    for (unsigned i = 0; i <= 480; ++i) {
         auto sample = r;
-        const double age = static_cast<double>(i) - 360;
+        const double age = static_cast<double>(i) - 480;
         sample.temperature += 7 * std::sin(age / 40.0);
         sample.humidity += 23 * std::sin(age / 30.0);
         sample.co2 += 1000 * std::pow(std::sin(age / 45.0), 2);
         sample.light += 100 * std::sin(age / 50.0);
         sample.pressure += 3 * std::sin(age / 80.0);
         if (i > 130 && i < 145) sample.valid = 0;
-        history.append(HistoryPoint::from(i * 60, sample));
+        history.append(HistoryPoint::from(i * 180, sample));
     }
     Diagnostics diag;
     diag.freeHeap = 243120; diag.minHeap = 240016; diag.loopUs = 12345;
@@ -178,19 +178,19 @@ int main() {
         MonitorUi<Canvas> ui(c);
         Navigation nav; nav.move(metricPage); nav.setOn(true);
         History sparse;
-        ui.render(nav, Readings{}, sparse, 600, diag);
+        ui.render(nav, Readings{}, sparse, 1800, diag);
         auto missing = std::find(c.labels.begin(), c.labels.end(), "N/A");
         assert(missing != c.labels.end() && c.textColors[missing - c.labels.begin()] == gray);
         if (metricPage == static_cast<int>(Page::Pressure)) c.save(".pio/host-tests/pressure-empty.svg");
         sparse.append(HistoryPoint::from(0, r));
-        sparse.append(HistoryPoint::from(60, Readings{}));
-        sparse.append(HistoryPoint::from(120, r));
-        sparse.append(HistoryPoint::from(600, r));
+        sparse.append(HistoryPoint::from(180, Readings{}));
+        sparse.append(HistoryPoint::from(360, r));
+        sparse.append(HistoryPoint::from(1800, r));
         nav.invalidate();
-        ui.render(nav, r, sparse, 600, diag);
+        ui.render(nav, r, sparse, 1800, diag);
         assert(c.lines == 0 && c.pixels == 3);
         nav.invalidate();
-        ui.render(nav, r, sparse, HistorySeconds + 601, diag);
+        ui.render(nav, r, sparse, HistorySeconds + 1801, diag);
     }
     auto setValue = [](Readings &sample, Page page, float value) {
         switch (page) {
@@ -228,8 +228,8 @@ int main() {
         setValue(sample, t.page, t.from);
         crossing.append(HistoryPoint::from(0, sample));
         setValue(sample, t.page, t.to);
-        crossing.append(HistoryPoint::from(60, sample));
-        ui.render(nav, sample, crossing, 60, diag);
+        crossing.append(HistoryPoint::from(180, sample));
+        ui.render(nav, sample, crossing, 180, diag);
         assert(c.lineColors == t.colors);
         // Split parts must meet, and progress in both screen axes without jumps.
         for (size_t i = 1; i < c.segments.size(); ++i) {
@@ -241,7 +241,7 @@ int main() {
         });
         assert(latest != c.labels.end() && c.textColors[latest - c.labels.begin()] == t.colors.back());
     }
-    // An invalid sample or a missed minute breaks the line even across color zones.
+    // An invalid sample or a missed three-minute point breaks the line even across color zones.
     {
         Canvas c;
         MonitorUi<Canvas> ui(c);
@@ -249,39 +249,39 @@ int main() {
         History sparse;
         auto sample = r;
         sample.co2 = 800; sparse.append(HistoryPoint::from(0, sample));
-        sparse.append(HistoryPoint::from(60, Readings{}));
-        sample.co2 = 1200; sparse.append(HistoryPoint::from(120, sample));
-        sample.co2 = 1800; sparse.append(HistoryPoint::from(300, sample));
-        ui.render(nav, sample, sparse, 300, diag);
+        sparse.append(HistoryPoint::from(180, Readings{}));
+        sample.co2 = 1200; sparse.append(HistoryPoint::from(360, sample));
+        sample.co2 = 1800; sparse.append(HistoryPoint::from(900, sample));
+        ui.render(nav, sample, sparse, 900, diag);
         assert(c.lines == 0 && c.pixelColors == std::vector<uint16_t>({green, yellow, red}));
     }
     // Pressure colors follow the local 3h change, not the absolute pressure.
-    // A ramp begins halfway through the buffer, so the plot contains all bands.
+    // A ramp begins three hours before the end, so the plot contains all bands.
     for (int sign : {1, -1}) {
         Canvas c;
         MonitorUi<Canvas> ui(c);
         Navigation nav; nav.move(static_cast<int>(Page::Pressure)); nav.setOn(true);
         History ramp;
         auto sample = r;
-        for (int i = 0; i <= 360; ++i) {
-            sample.pressure = 1000 + sign * std::max(0, i - 180) * 0.05f;
-            ramp.append(HistoryPoint::from(i * 60, sample));
+        for (int i = 0; i <= 480; ++i) {
+            sample.pressure = 1000 + sign * std::max(0, i - 420) * 0.15f;
+            ramp.append(HistoryPoint::from(i * 180, sample));
         }
-        ui.render(nav, sample, ramp, 21600, diag);
+        ui.render(nav, sample, ramp, 86400, diag);
         for (auto color : {blue, green, yellow, red})
             assert(std::find(c.lineColors.begin(), c.lineColors.end(), color) != c.lineColors.end());
         assert(std::find(c.labels.begin(), c.labels.end(), sign > 0 ? "Rising / rapid" : "Falling / rapid") != c.labels.end());
         assert(std::find(c.labels.begin(), c.labels.end(), "Span 6.75 mmHg") != c.labels.end());
         assert(std::find(c.labels.begin(), c.labels.end(), sign > 0 ?
-            "6h min 750.1 max 756.8 mmHg" : "6h min 743.3 max 750.1 mmHg") != c.labels.end());
+            "24h min 750.1 max 756.8 mmHg" : "24h min 743.3 max 750.1 mmHg") != c.labels.end());
         assert(c.lineColors.front() == blue && c.lineColors.back() == red);
         assert(c.segments.front().y0 >= 86 && c.segments.back().y1 <= 266);
         c.save(sign > 0 ? ".pio/host-tests/pressure-rising.svg" : ".pio/host-tests/pressure-falling.svg");
         const int before = c.operations;
         nav.setOn(false); nav.invalidate();
-        assert(!ui.render(nav, sample, ramp, 21600, diag) && c.operations == before);
+        assert(!ui.render(nav, sample, ramp, 86400, diag) && c.operations == before);
         nav.setOn(true);
-        ui.render(nav, sample, ramp, 21700, diag);
+        ui.render(nav, sample, ramp, 86671, diag);
         assert(c.labels.end() != std::find(c.labels.begin(), c.labels.end(), "3h: insufficient data"));
     }
     {
@@ -289,14 +289,14 @@ int main() {
         MonitorUi<Canvas> ui(c);
         Navigation nav; nav.move(static_cast<int>(Page::Pressure)); nav.setOn(true);
         History flat;
-        for (unsigned i = 0; i <= 184; ++i) flat.append(HistoryPoint::from(i * 60, r));
-        ui.render(nav, r, flat, 184 * 60, diag);
+        for (unsigned i = 0; i <= 61; ++i) flat.append(HistoryPoint::from(i * 180, r));
+        ui.render(nav, r, flat, 61 * 180, diag);
         assert(std::find(c.labels.begin(), c.labels.end(), "3h +0.00 mmHg") != c.labels.end());
         assert(std::find(c.labels.begin(), c.labels.end(), "Steady") != c.labels.end());
         assert(std::find(c.labels.begin(), c.labels.end(), "Span 0.00 mmHg") != c.labels.end());
         assert(c.lineColors.back() == blue); // first trend needs a valid preceding trend
-        flat.append(HistoryPoint::from(185 * 60, r));
-        nav.invalidate(); ui.render(nav, r, flat, 185 * 60, diag);
+        flat.append(HistoryPoint::from(62 * 180, r));
+        nav.invalidate(); ui.render(nav, r, flat, 62 * 180, diag);
         assert(c.lineColors.back() == green);
     }
     {
@@ -306,9 +306,9 @@ int main() {
         History expired;
         auto sample = r;
         sample.pressure = 1100; expired.append(HistoryPoint::from(0, sample));
-        sample.pressure = 1000; expired.append(HistoryPoint::from(60, sample));
+        sample.pressure = 1000; expired.append(HistoryPoint::from(180, sample));
         ui.render(nav, sample, expired, HistorySeconds + 1, diag);
-        assert(std::find(c.labels.begin(), c.labels.end(), "6h min 750.1 max 750.1 mmHg") != c.labels.end());
+        assert(std::find(c.labels.begin(), c.labels.end(), "24h min 750.1 max 750.1 mmHg") != c.labels.end());
         assert(std::find(c.labels.begin(), c.labels.end(), "Span 0.00 mmHg") != c.labels.end());
         assert(c.lines == 0 && c.pixels == 1); // old high pressure is excluded from plot and stats
     }

@@ -23,11 +23,11 @@ int main() {
     sample.readings.temperature = 22; sample.readings.humidity = 45;
     sample.readings.pressure = 1013; sample.readings.co2 = 800; sample.readings.light = 100;
     sample.lightSequence = 1;
-    sample.historySequence = 1;
-    sample.historyPoint = HistoryPoint::from(1, sample.readings);
+    sample.sampleSequence = 1;
+    sample.samplePoint = HistoryPoint::from(1, sample.readings);
     xQueueOverwrite(sensorMailbox, &sample);
     testTime = 1000; loop();
-    assert(display.on && history.size() == 1 && display.draws > 0 && mockBacklight == 0);
+    assert(display.on && history.size() == 0 && display.draws > 0 && mockBacklight == 0);
     const auto initialDraws = display.draws;
     while (testTime < 9000) loop();
     assert(display.draws == initialDraws && mockBacklight == 400); // PWM fade does not redraw pixels
@@ -56,18 +56,30 @@ int main() {
     assert(backlight.target() == 800);
     const auto settledDraws = display.draws;
     while (testTime < 29000) loop();
-    assert(history.size() == 1 && mockBacklight == 800 && display.draws == settledDraws);
+    assert(history.size() == 0 && mockBacklight == 800 && display.draws == settledDraws);
     testTime = 31000; loop();
     assert(!display.on && mockBacklight == 0);
     const auto offDraws = display.draws;
     testTime = 61000;
-    sample.historySequence = 2;
-    sample.historyPoint = HistoryPoint::from(61, sample.readings);
+    sample.sampleSequence = 2;
+    sample.readings.temperature = 24; sample.readings.co2 = 1000;
+    sample.samplePoint = HistoryPoint::from(61, sample.readings);
     xQueueOverwrite(sensorMailbox, &sample);
     loop();
-    assert(history.size() == 2 && display.draws == offDraws && mockBacklight == 0);
+    assert(history.size() == 0 && display.draws == offDraws && mockBacklight == 0);
+    testTime = 62000; loop();
+    assert(diagnostics.sampleAgeSeconds == 1); // live sample age even before the first mean
+    testTime = 121000;
+    sample.sampleSequence = 3;
+    sample.readings.temperature = 26; sample.readings.co2 = 1200;
+    sample.samplePoint = HistoryPoint::from(121, sample.readings);
+    xQueueOverwrite(sensorMailbox, &sample);
+    loop();
+    assert(history.size() == 1 && display.draws == offDraws && mockBacklight == 0);
+    assert(history.at(0).temperature == 2400 && history.at(0).co2 == 1000);
+    assert(sensors.readings.temperature == 26 && sensors.readings.co2 == 1200);
     float pressure = 0;
-    assert(history.at(1).value(Metric::Pressure, pressure) && std::fabs(pressure - 759.8125f) < 0.05f);
+    assert(history.at(0).value(Metric::Pressure, pressure) && std::fabs(pressure - 759.8125f) < 0.05f);
     InputSnapshot input;
     input.rightPresses = 1;
     xQueueOverwrite(inputMailbox, &input);
@@ -75,7 +87,7 @@ int main() {
     assert(display.on && navigation.page() == Page::Temperature && display.draws > offDraws);
     assert(mockBacklight == 0); // wake does not jump to retained target
     const auto graphDraws = display.draws;
-    while (testTime < 68000) loop();
+    while (testTime < 128000) loop();
     assert(mockBacklight == 800 && display.draws == graphDraws);
     sample.readings.light = 50;
     ++sample.lightSequence;
@@ -87,7 +99,7 @@ int main() {
     xQueueOverwrite(sensorMailbox, &sample);
     loop();
     assert(display.draws == graphDraws && mockBacklight == 800);
-    testTime = 100000; loop();
+    testTime = 160000; loop();
     assert(!display.on);
     input.rightPresses = 5; // four presses accumulated while loop was busy
     input.motion = true;
@@ -95,9 +107,9 @@ int main() {
     loop();
     assert(display.on && navigation.page() == Page::Pressure);
     const auto pressureDraws = display.draws;
-    testTime = 151000; loop(); // latest stored sample is 61 s: still fresh at 90 s
+    testTime = 391000; loop(); // latest mean ends at 121 s: still fresh at 270 s
     assert(display.draws == pressureDraws);
-    testTime = 152000; loop();
+    testTime = 392000; loop();
     assert(display.draws > pressureDraws && display.on);
     const auto expiredDraws = display.draws;
     loop();
@@ -124,6 +136,29 @@ int main() {
     xQueueOverwrite(inputMailbox, &input);
     loop();
     assert(navigation.page() == Page::Service); // a complete seven-page turn
+    // Replay more than a day through the real loop while the display sleeps.
+    // This verifies cadence, ring wrap, no duplicate points and valid 3h trends.
+    history = History{};
+    historyAverage = HistoryAverage{};
+    sensors = SensorSnapshot{};
+    testTime = 600000; loop();
+    assert(!display.on);
+    const auto sleepingDraws = display.draws;
+    sample.readings.valid = Environment | CO2 | Light;
+    for (unsigned minute = 0; minute < (HistoryCapacity + 5) * 3; ++minute) {
+        testTime = 600000 + minute * 60000;
+        sample.sampleSequence = minute + 1;
+        sample.readings.co2 = 600 + (minute % 3) * 300;
+        sample.samplePoint = HistoryPoint::from(testTime / 1000, sample.readings);
+        xQueueOverwrite(sensorMailbox, &sample); loop();
+        assert(history.size() == std::min(size_t((minute + 1) / 3), HistoryCapacity));
+        xQueueOverwrite(sensorMailbox, &sample); loop(); // repeated snapshot is not a new sample
+        assert(display.draws == sleepingDraws);
+    }
+    assert(history.at(0).seconds == 600 + 5 * 180 + 120);
+    assert(history.at(HistoryCapacity - 1).seconds - history.at(0).seconds == HistorySeconds);
+    assert(history.at(0).co2 == 900 && sensors.readings.co2 == 1200);
+    assert(latestPressureTrend(history, uptime.seconds()).valid);
     // Run the real sensor worker for two samples, stopping via the delay hook.
     struct WorkerFinished {};
     testTime = 0;
@@ -139,8 +174,8 @@ int main() {
         if (testTime < 15000 || (testTime >= 60000 && testTime < 75000)) assert(mockFan == 142);
         else assert(mockFan == 0);
         SensorSnapshot snapshot;
-        if (xQueueReceive(sensorMailbox, &snapshot, 0) == pdTRUE && snapshot.historySequence == 2) {
-            assert(snapshot.historyPoint.seconds == 77 && !snapshot.fanOn);
+        if (xQueueReceive(sensorMailbox, &snapshot, 0) == pdTRUE && snapshot.sampleSequence == 2) {
+            assert(snapshot.samplePoint.seconds == 77 && !snapshot.fanOn);
             throw WorkerFinished{};
         }
         assert(testTime < 78000);
@@ -150,5 +185,5 @@ int main() {
     assert(measurements == 2);
     Adafruit_BME280::beforeMeasurement = nullptr;
     mockTaskDelay = nullptr;
-    std::puts("PASS: loop render gating, pressure expiry, brightness, and actual worker waits 2 s after fan stop before sampling");
+    std::puts("PASS: 24h averaged history in actual loop, live readings, render gating, pressure expiry, brightness and fan settling");
 }

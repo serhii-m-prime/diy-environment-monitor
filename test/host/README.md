@@ -13,7 +13,7 @@ Run with a C++17 host compiler:
 - `monitor_tests.cpp` covers RAM history encoding and ring wrap, navigation,
   display activity timeout, millis rollover, fan/settling/sample scheduling and exact
   temperature/humidity/CO2 guidance boundaries, including neutral pressure.
-- `pressure_tests.cpp` covers 3-hour pressure deltas, five-sample averaging,
+- `pressure_tests.cpp` covers 3-hour pressure deltas over paired three-minute means,
   intensity/direction boundaries, warm-up, stale/invalid/missing samples, timestamp
   jitter, circular overwrite and timer rollover. This target uses C++11, matching
   the firmware's language standard.
@@ -38,7 +38,9 @@ Run with a C++17 host compiler:
   mailboxes and TFT transport. Checks history collection while off, wake/navigation,
   no duplicate history during light updates, retained brightness on failure and
   rendering only the selected page at its configured cadence, and a single redraw
-  when a pressure tendency expires. A bounded execution of the real sensor worker
+  when a pressure tendency expires. Replays over 24 hours of minute samples through
+  the real loop to check averaged points, fresh live readings, ring overwrite and
+  pressure analysis with the display off. A bounded execution of the real sensor worker
   verifies that BME measurements occur after 15 seconds of fan operation and
   2 seconds of settling, with minute sample cadence.
 

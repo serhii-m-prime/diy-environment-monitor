@@ -58,8 +58,8 @@ private:
         canvas_.print(value);
     }
     void header(Page page) {
-        static const char *titles[] = {"ENVIRONMENT", "TEMPERATURE / 6h", "HUMIDITY / 6h",
-                                      "CO2 / 6h", "LIGHT / 6h", "PRESSURE / 6h", "SERVICE"};
+        static const char *titles[] = {"ENVIRONMENT", "TEMPERATURE / 24h", "HUMIDITY / 24h",
+                                      "CO2 / 24h", "LIGHT / 24h", "PRESSURE / 24h", "SERVICE"};
         static_assert(sizeof(titles) / sizeof(titles[0]) == static_cast<unsigned>(Page::Count), "Missing page title");
         text(14, 14, titles[static_cast<uint8_t>(page)]);
         char count[12];
@@ -186,11 +186,11 @@ private:
             }
         } else text(252, 60, valid ? "3h: insufficient data" : "3h: no valid pressure", 1, Muted);
         if (count) {
-            std::snprintf(buffer, sizeof(buffer), "6h min %.1f max %.1f mmHg", low, high);
+            std::snprintf(buffer, sizeof(buffer), "24h min %.1f max %.1f mmHg", low, high);
             text(42, 286, buffer, 1, Muted);
             std::snprintf(buffer, sizeof(buffer), "Span %.2f mmHg", high - low);
             text(300, 286, buffer, 1, Muted);
-        } else text(42, 286, "6h min/max/span N/A", 1, Muted);
+        } else text(42, 286, "24h min/max/span N/A", 1, Muted);
     }
     void graph(Metric metric, const Readings &r, const History &history, uint32_t now) {
         const bool pressure = metric == Metric::Pressure;
@@ -240,8 +240,8 @@ private:
         for (int i = 0; i <= 6; ++i)
             canvas_.drawFastVLine(x0 + (x1 - x0) * i / 6, y0, y1 - y0 + 1, Grid);
         const int timeY = pressure ? 273 : 269;
-        text(x0, timeY, "-6h", 1, Muted);
-        text((x0 + x1) / 2 - 9, timeY, "-3h", 1, Muted);
+        text(x0, timeY, "-24h", 1, Muted);
+        text((x0 + x1) / 2 - 12, timeY, "-12h", 1, Muted);
         text(x1 - 18, timeY, "now", 1, Muted);
 
         bool connected = false;
@@ -261,7 +261,7 @@ private:
             const int y = y1 - static_cast<int>((v - low) * (y1 - y0) / (high - low));
             const auto trend = pressure ? pressureSeries.at(i) : PressureTrend{};
             // Do not join across missed sample periods or failed sensor reads.
-            if (connected && p.seconds - lastSeconds <= 90) {
+            if (connected && p.seconds - lastSeconds <= HistoryMaxGapSeconds) {
                 if (pressure) canvas_.drawLine(lastX, lastY, x, y,
                     guidanceColor(lastTrendValid ? trend.guidance() : Guidance::Neutral));
                 else graphSegment(metric, lastX, lastY, lastValue, x, y, v);
@@ -280,8 +280,8 @@ private:
             text(64, 287, "Reference", 1, Reference);
             text(160, 287, "Watch", 1, Watch);
             text(238, 287, "Attention", 1, Attention);
-            text(360, 287, "1 min/pt", 1, Muted);
-        } else text(90, 287, "1 min / point | gaps = no data", 1, Muted);
+            text(360, 287, "3 min/pt", 1, Muted);
+        } else text(90, 287, "3 min / point | gaps = no data", 1, Muted);
     }
     void service(const History &history, const Diagnostics &d) {
         canvas_.fillRect(12, 52, 456, 242, Background);

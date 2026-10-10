@@ -10,9 +10,10 @@ constexpr uint32_t SamplePeriodMs = 60000;
 constexpr uint32_t SampleMaxGapSeconds = SamplePeriodMs / 1000 * 3 / 2;
 constexpr size_t HistorySamplesPerPoint = 3;
 constexpr uint32_t HistoryPeriodSeconds = SamplePeriodMs / 1000 * HistorySamplesPerPoint;
-constexpr uint32_t HistoryHours = 6;
+constexpr uint32_t HistoryMaxGapSeconds = HistoryPeriodSeconds * 3 / 2;
+constexpr uint32_t HistoryHours = 24;
 constexpr uint32_t HistorySeconds = HistoryHours * 3600;
-constexpr size_t HistoryCapacity = HistorySeconds / (SamplePeriodMs / 1000) + 1;
+constexpr size_t HistoryCapacity = HistorySeconds / HistoryPeriodSeconds + 1;
 // 1 mmHg = 133.322387415 Pa.
 constexpr float HpaToMmHg = 0.750061683f;
 
@@ -29,7 +30,7 @@ struct Readings {
     uint8_t valid = 0;
 };
 
-// Fixed-point samples keep six hours in internal RAM without a framebuffer or PSRAM.
+// Fixed-point samples keep a full day in internal RAM without a framebuffer or PSRAM.
 struct HistoryPoint {
     uint32_t seconds = 0;
     int16_t temperature = 0; // hundredths of a degree C
@@ -147,8 +148,8 @@ struct InputSnapshot {
 // The latest minute sample remains present through intervening light updates.
 struct SensorSnapshot {
     Readings readings;
-    HistoryPoint historyPoint;
-    uint32_t historySequence = 0, lightSequence = 0, measurementUs = 0, errors = 0;
+    HistoryPoint samplePoint;
+    uint32_t sampleSequence = 0, lightSequence = 0, measurementUs = 0, errors = 0;
     bool fanOn = false;
 };
 
