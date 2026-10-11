@@ -17,6 +17,8 @@
 #include <HistoryAverage.h>
 #include <MonitorPlatform.h>
 #include <IdfDiagnostics.h>
+#include <InputWaitPolicy.h>
+#include <IdfPower.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -61,7 +63,24 @@ QueueHandle_t inputMailbox = nullptr, sensorMailbox = nullptr;
 #ifdef ESP_PLATFORM
 TaskHandle_t inputTaskHandle = nullptr, sensorTaskHandle = nullptr, uiTaskHandle = nullptr;
 RuntimeDiagnostics runtimeDiagnostics;
+PowerRuntime powerRuntime;
+void notifyUi() { if (uiTaskHandle) xTaskNotifyGive(uiTaskHandle); }
+void IRAM_ATTR inputEdge(void *) {
+    BaseType_t wake = pdFALSE;
+    vTaskNotifyGiveFromISR(inputTaskHandle, &wake);
+    if (wake) portYIELD_FROM_ISR();
+}
 #endif
+
+void setFan(bool on) {
+#ifdef ESP_PLATFORM
+    if (on) powerRuntime.fan(true);
+#endif
+    writePwm(FanChannel, on ? 142 : 0);
+#ifdef ESP_PLATFORM
+    if (!on) powerRuntime.fan(false);
+#endif
+}
 
 // No callbacks in this task touch the display or shared application state.
 void inputTask(void *) {
@@ -75,13 +94,39 @@ void inputTask(void *) {
     pir.onEventEnd([&] { snapshot.motion = false; });
     left.begin(); right.begin(); pir.begin();
     pir.setDebounceDelay(20);
+#ifdef ESP_PLATFORM
+    inputTaskHandle = xTaskGetCurrentTaskHandle();
+    const auto isrResult = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    if (isrResult != ESP_OK && isrResult != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(isrResult);
+    for (int pin : {LeftPin, RightPin, PirPin}) {
+        ESP_ERROR_CHECK(gpio_set_intr_type(static_cast<gpio_num_t>(pin), GPIO_INTR_ANYEDGE));
+        ESP_ERROR_CHECK(gpio_isr_handler_add(static_cast<gpio_num_t>(pin), inputEdge, nullptr));
+    }
+    powerRuntime.configureInputWake(LeftPin, RightPin, PirPin);
+    InputWaitPolicy waitPolicy;
+    InputSnapshot previous;
+    bool first = true;
+#else
     TickType_t wake = xTaskGetTickCount();
+#endif
     for (;;) {
         left.update(); right.update(); pir.update();
         // Counters survive an overwritten snapshot while TFT is busy.
         xQueueOverwrite(inputMailbox, &snapshot);
         taskHeartbeat();
+#ifdef ESP_PLATFORM
+        if (first || snapshot.leftPresses != previous.leftPresses ||
+            snapshot.rightPresses != previous.rightPresses || snapshot.motion != previous.motion) notifyUi();
+        previous = snapshot; first = false;
+        const uint8_t levels = (digitalRead(LeftPin) == HIGH ? 1 : 0) |
+            (digitalRead(RightPin) == HIGH ? 2 : 0) | (digitalRead(PirPin) == HIGH ? 4 : 0);
+        const auto waitMs = waitPolicy.observe(millis(), levels);
+        for (int pin : {LeftPin, RightPin, PirPin}) powerRuntime.inputWake(pin);
+        if (waitMs == 10) vTaskDelay(pdMS_TO_TICKS(10));
+        else ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(waitMs));
+#else
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(10));
+#endif
     }
 }
 
@@ -92,9 +137,14 @@ void sensorTask(void *) {
     TempHumPressSensor_BME280 environment(EnvironmentAddress);
     LightSensor_BH1750 light;
     SensorSnapshot snapshot;
-    Wire.begin(SdaPin, SclPin);
-    Wire.setTimeOut(50);
-    co2.begin(); environment.begin(); light.begin();
+    {
+#ifdef ESP_PLATFORM
+        PowerGuard ioGuard(powerRuntime, PowerGuard::Use::SensorIo);
+#endif
+        Wire.begin(SdaPin, SclPin);
+        Wire.setTimeOut(50);
+        co2.begin(); environment.begin(); light.begin();
+    }
     Uptime sensorUptime;
     SampleSchedule schedule(millis());
     uint32_t lastLight = millis() - LightPeriodMs;
@@ -109,11 +159,14 @@ void sensorTask(void *) {
         const bool fan = schedule.fanNeeded();
         if (fan != snapshot.fanOn) {
             snapshot.fanOn = fan;
-            writePwm(FanChannel, fan ? 142 : 0);
+            setFan(fan);
             publish = true;
         }
         const bool sampleDue = schedule.due(now);
         if (sampleDue) {
+#ifdef ESP_PLATFORM
+            PowerGuard ioGuard(powerRuntime, PowerGuard::Use::SensorIo);
+#endif
             const uint32_t started = micros();
             if (!environmentHealthy) environment.begin();
             snapshot.readings.valid &= ~(Environment | CO2);
@@ -134,6 +187,9 @@ void sensorTask(void *) {
             snapshot.measurementUs = micros() - started;
         }
         if (sampleDue || uint32_t(now - lastLight) >= LightPeriodMs) {
+#ifdef ESP_PLATFORM
+            PowerGuard ioGuard(powerRuntime, PowerGuard::Use::SensorIo);
+#endif
             lastLight = now;
             ++snapshot.lightSequence;
             if (!(snapshot.readings.valid & Light) && uint32_t(now - lastLightRetry) >= LightRetryMs) {
@@ -153,12 +209,24 @@ void sensorTask(void *) {
             ++snapshot.sampleSequence;
             schedule.sampled(now);
             snapshot.fanOn = false;
-            writePwm(FanChannel, 0);
+            setFan(false);
             publish = true;
         }
-        if (publish) xQueueOverwrite(sensorMailbox, &snapshot);
+        if (publish) {
+            xQueueOverwrite(sensorMailbox, &snapshot);
+#ifdef ESP_PLATFORM
+            notifyUi();
+#endif
+        }
         taskHeartbeat();
+#ifdef ESP_PLATFORM
+        const uint32_t waitNow = millis(), lightAge = waitNow - lastLight;
+        const uint32_t lightWait = lightAge < LightPeriodMs ? LightPeriodMs - lightAge : 0;
+        const uint32_t waitMs = std::max(uint32_t(1), std::min(lightWait, schedule.untilTransition(waitNow)));
+        vTaskDelay(pdMS_TO_TICKS(waitMs));
+#else
         vTaskDelay(pdMS_TO_TICKS(20));
+#endif
     }
 }
 
@@ -231,9 +299,15 @@ void loop() {
 
     const bool on = activity.update(now, inputs.motion, pressed);
     if (on != navigation.isOn()) {
+#ifdef ESP_PLATFORM
+        if (on) powerRuntime.display(true);
+#endif
         if (!on) writePwm(BacklightChannel, 0);
         display.sendCommand(on ? ST77XX_DISPON : ST77XX_DISPOFF);
         navigation.setOn(on);
+#ifdef ESP_PLATFORM
+        if (!on) powerRuntime.display(false);
+#endif
     }
     if (navigation.isOn() && navigation.page() == Page::Service && uint32_t(now - lastServiceMs) >= 1000) {
         navigation.invalidate();
@@ -259,13 +333,23 @@ void loop() {
     if (navigation.needsRender()) {
 #ifdef ESP_PLATFORM
         runtimeDiagnostics.collect(diagnostics, inputTaskHandle, sensorTaskHandle, uiTaskHandle);
+        diagnostics.cpuMhz = getCpuFrequencyMhz();
+#if CONFIG_MONITOR_POWER_MANAGEMENT
+        diagnostics.powerManagement = true;
+#endif
+#if CONFIG_MONITOR_AUTO_LIGHT_SLEEP
+        diagnostics.autoLightSleep = true;
+#endif
 #else
         diagnostics.freeHeap = ESP.getFreeHeap();
         diagnostics.minHeap = ESP.getMinFreeHeap();
 #endif
         const uint32_t renderStart = micros();
 #ifdef ESP_PLATFORM
-        display.render(ui, navigation, sensors.readings, history, uptime.seconds(), diagnostics);
+        {
+            PowerGuard renderGuard(powerRuntime, PowerGuard::Use::Render);
+            display.render(ui, navigation, sensors.readings, history, uptime.seconds(), diagnostics);
+        }
         diagnostics.dmaTransfers = display.transfers();
         diagnostics.dmaBufferBytes = DmaDisplay::BufferBytes;
 #else
@@ -281,7 +365,13 @@ void loop() {
         previousBrightness = diagnostics.brightness;
     }
     taskHeartbeat();
+#ifdef ESP_PLATFORM
+    // Off-screen history/light collection continues; worker notifications wake
+    // the UI immediately. Periodic wake also maintains diagnostics/watchdog.
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(navigation.isOn() ? 10 : 1000));
+#else
     delay(10);
+#endif
 }
 
 #ifdef ESP_PLATFORM
@@ -289,13 +379,17 @@ namespace {
 void uiTask(void *) {
     uiTaskHandle = xTaskGetCurrentTaskHandle();
     watchCurrentTask();
-    setup();
+    {
+        PowerGuard initializationGuard(powerRuntime, PowerGuard::Use::SensorIo);
+        setup();
+    }
     for (;;) loop();
 }
 }
 extern "C" void app_main() {
     initArduino();
     initializeDiagnostics();
+    powerRuntime.begin();
     if (xTaskCreatePinnedToCore(uiTask, "ui", CONFIG_MONITOR_UI_STACK_BYTES,
                               nullptr, 1, nullptr, 1) != pdPASS) abort();
 }

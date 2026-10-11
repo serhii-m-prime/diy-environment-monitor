@@ -1,8 +1,7 @@
 #pragma once
 #ifdef ESP_PLATFORM
 #include <Arduino.h>
-#include <Adafruit_GFX.h>
-#include <glcdfont.c>
+#include <MonitorFont.h>
 #include <MonitorUi.h>
 #include <TileCanvas.h>
 #include <driver/spi_master.h>

@@ -31,12 +31,17 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Brightness test compilation failed' }
     & ./.pio/host-tests/brightness_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'Brightness tests failed' }
-    & $Cxx -std=c++17 -Wall -Wextra -Ilib/App '-I.pio/libdeps/esp32-s3-debug/Adafruit GFX Library' test/host/ui_tests.cpp `
+    & $Cxx -std=c++11 -Wall -Wextra -Werror -Ilib/App test/host/power_policy_tests.cpp `
+        -o .pio/host-tests/power_policy_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Power policy test compilation failed' }
+    & ./.pio/host-tests/power_policy_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Power policy tests failed' }
+    & $Cxx -std=c++17 -Wall -Wextra -Ilib/App test/host/ui_tests.cpp `
         -o .pio/host-tests/ui_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'UI test compilation failed' }
     & ./.pio/host-tests/ui_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'UI tests failed' }
-    & $Cxx -std=c++17 -Wall -Wextra -Werror -Ilib/App '-I.pio/libdeps/esp32-s3-debug/Adafruit GFX Library' test/host/tile_tests.cpp `
+    & $Cxx -std=c++17 -Wall -Wextra -Werror -Ilib/App test/host/tile_tests.cpp `
         -o .pio/host-tests/tile_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'Tile test compilation failed' }
     & ./.pio/host-tests/tile_tests.exe

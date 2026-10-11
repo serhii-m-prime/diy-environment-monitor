@@ -38,6 +38,19 @@ buffer reuse, display commands or backlight wake-up. Hidden/sleeping pages do no
 send pixel data. Service shows transfer count and buffer size. Tile height is a
 menuconfig setting; physical SPI timing and actual render speed need board tests.
 
+Dynamic frequency scaling uses 40..240 MHz, with a maximum-frequency lock while
+rasterizing/transmitting a frame. Automatic light sleep is enabled through tickless
+idle; internal RAM history is retained. Display-on, fan-on and active sensor I/O
+hold separate no-light-sleep locks, preserving PWM and UART/I2C transactions.
+Input GPIO edge interrupts wake the debouncer; 10 ms polling is limited to its
+70 ms settling window. Stable/held inputs wait for notifications, with a 1-second
+watchdog heartbeat. GPIO sleep wakeup uses the opposite of each current level,
+so held buttons and sustained PIR do not create a wake storm. The sensor worker
+waits for the next light/fan/settling deadline; the sleeping UI wakes on snapshots
+and input changes. No deep sleep or flash persistence is used. DFS/light sleep and
+minimum frequency are configurable under **Environment monitor**.
+Actual current draw, wake behavior, UART activity and PWM continuity need board tests.
+
 ## Controls and screens
 
 - Left button: **GPIO7 to GND**.

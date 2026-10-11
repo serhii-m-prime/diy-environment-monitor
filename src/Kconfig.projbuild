@@ -1,4 +1,24 @@
 menu "Environment monitor"
+    config MONITOR_POWER_MANAGEMENT
+        bool "Enable dynamic frequency scaling"
+        depends on PM_ENABLE
+        default y
+    config MONITOR_AUTO_LIGHT_SLEEP
+        bool "Automatically light-sleep with display/fan off"
+        depends on MONITOR_POWER_MANAGEMENT && FREERTOS_USE_TICKLESS_IDLE
+        default y
+    choice MONITOR_MIN_CPU_FREQUENCY
+        prompt "Minimum CPU frequency"
+        default MONITOR_MIN_CPU_40
+        config MONITOR_MIN_CPU_40
+            bool "40 MHz"
+        config MONITOR_MIN_CPU_80
+            bool "80 MHz"
+    endchoice
+    config MONITOR_MIN_CPU_MHZ
+        int
+        default 80 if MONITOR_MIN_CPU_80
+        default 40
     config MONITOR_DMA_TILE_ROWS
         int "Rows per DMA tile (two internal buffers)"
         range 8 32

@@ -4,10 +4,8 @@
 #include <fstream>
 #include <string>
 #include <vector>
-#if __has_include("glcdfont.c")
-#include "glcdfont.c"
+#include <MonitorFont.h>
 #define PREVIEW_BITMAP_FONT
-#endif
 
 // Recording canvas checks geometry and exports SVG previews using GFX's 6x8 cell size.
 struct Canvas {

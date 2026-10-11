@@ -308,6 +308,9 @@ private:
         text(14, y + 2, "Loop = work + delay; render = last frame", 1, Muted);
         std::snprintf(buffer, sizeof(buffer), "SPI DMA %lu transfers | buffers %lu B", (unsigned long)d.dmaTransfers, (unsigned long)d.dmaBufferBytes);
         text(14, y + 14, buffer, 1, Muted);
+        std::snprintf(buffer, sizeof(buffer), "CPU %u MHz | DFS %s | auto sleep %s", unsigned(d.cpuMhz),
+            d.powerManagement ? "ON" : "OFF", d.autoLightSleep ? "ON" : "OFF");
+        text(14, y + 26, buffer, 1, Muted);
     }
 };
 

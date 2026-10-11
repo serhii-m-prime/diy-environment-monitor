@@ -139,6 +139,8 @@ struct Diagnostics {
     uint32_t largestHeapBlock = 0, inputStackFree = 0, sensorStackFree = 0, uiStackFree = 0;
     uint8_t resetReason = 0;
     uint32_t dmaTransfers = 0, dmaBufferBytes = 0;
+    uint16_t cpuMhz = 0;
+    bool powerManagement = false, autoLightSleep = false;
     uint16_t brightness = 0;
     bool fanOn = false, motion = false;
 };
@@ -190,6 +192,13 @@ public:
         return phase_ == Phase::Settling && uint32_t(now - phaseStarted_) >= FanSettleMs;
     }
     void sampled(uint32_t started) { lastSample_ = started; phase_ = Phase::Idle; }
+    uint32_t untilTransition(uint32_t now) const {
+        const uint32_t start = phase_ == Phase::Idle ? lastSample_ : phaseStarted_;
+        const uint32_t interval = phase_ == Phase::Fan ? FanLeadMs :
+            phase_ == Phase::Settling ? FanSettleMs : SamplePeriodMs - FanLeadMs - FanSettleMs;
+        const uint32_t elapsed = now - start;
+        return elapsed < interval ? interval - elapsed : 0;
+    }
 private:
     enum class Phase : uint8_t { Idle, Fan, Settling };
     Phase phase_ = Phase::Fan;
