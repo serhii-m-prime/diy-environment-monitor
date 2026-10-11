@@ -18,7 +18,7 @@ ESP-IDF 5.5.5 збирається із джерел; Arduino 3.3.12 підкл�
 
 Усі дев'ять host-наборів пройшли. Серед них — replay понад 24 години в реальному loop/worker, помилки датчиків, rollover, debounce/held inputs, fan/settling deadlines, geometry/render gating, піксельна відповідність повного й tiled-рендера для семи сторінок та incremental/sleep/wake. Старі попередження signed comparison в State.h залишаються в host-збірці.
 
-Native-збірки й перевірка ELF/BIN:
+Первинні native-збірки й перевірка ELF/BIN до виправлення яскравості:
 
 | Профіль | Результат | BIN застосунку, байтів | Статична RAM, байтів |
 | --- | --- | ---: | ---: |
@@ -29,7 +29,7 @@ Native-збірки й перевірка ELF/BIN:
 
 `tools/verify_firmware.py` підтвердив у generated sdkconfig watchdog/core dump/PM/tickless/DMA-параметри, лише SPI/Wire з Arduino libraries, таблицю розділів і вкладення BIN у 3 MiB app partition. У ELF обох профілів є `esp_task_wdt_add/reset`, `esp_core_dump_write_start`, `spi_bus_initialize`, `esp_lcd_panel_io_tx_color`, `esp_pm_configure`, PM locks і `gpio_wakeup_enable`. Heap trace start/stop/dump є лише в debug. Повний результат і hashes — `.pio/validation/firmware.json`.
 
-SHA-256 поточних артефактів:
+SHA-256 первинних артефактів версії `e2c51ec`:
 
 ```text
 debug BIN  75c4328ce1715688bdef75a0bb0688190a93240e4294d491e2754bbe8609bf9e
@@ -48,7 +48,46 @@ powershell -NoProfile -ExecutionPolicy Bypass -File test/host/run.ps1 -Cxx C:/ms
 python tools/verify_firmware.py
 ```
 
+## Виправлення яскравості після перевірки на пристрої
+
+Коміт коду: `19227c8`. Користувач повідомив 30 lux / LED 115 та значне
+зменшення яскравості після міграції. Проба з попереднім контролером
+`DisplayBrightness` з коміту `5784122` відтворила усталений target/PWM 120:
+це лише 2,930% на окремому 12-бітному таймері IDF.
+
+У baseline `5c2b8f4` backlight channel 0 і fan channel 1 ділили timer 0.
+Arduino 2.0.17 обирає timer як `(channel / 2) % 4`; другий `ledcSetup`
+для вентилятора встановлював 8 біт замість початкових 12. Тому ті самі
+120 відліків давали приблизно 46,875% до міграції.
+Підтверджено локальним HAL та [джерелом Espressif Arduino 2.0.17](https://github.com/espressif/arduino-esp32/blob/2.0.17/cores/esp32/esp32-hal-ledc.c).
+
+Виправлено шкалу на незалежному 12-бітному таймері: 64 відліки/lux,
+мінімум 48, fallback 3840, максимум 4095; абсолютний deadband теж
+масштабовано до 192. При 30 lux нова проба і реальний loop у host-тесті
+дають 1920/4096 (46,875%), приблизно від 64 lux — максимум.
+Гістерезис, підтвердження, плавність, збереження target при помилках
+датчика та sleep/wake перевірено; всі дев'ять host-наборів пройшли.
+Лог: `.pio/brightness-host.log`.
+
+Обидві native-збірки пройшли повторно; у BIN перевірено app description
+з версією `19227c8`, а також конфігурацію, native symbols, partitions та
+відповідність усіх частин factory image. Лог: `.pio/brightness-native-build.log`.
+Поточні artifact hashes: `.pio/validation/firmware.json` і
+`.pio/validation/brightness-artifacts.json`.
+
+| Профіль `19227c8` | Результат | BIN застосунку, байтів | Статична RAM, байтів |
+| --- | --- | ---: | ---: |
+| debug | PASS | 474304 | 43052 |
+| release | PASS | 407184 | 34532 |
+
+SHA-256 поточних BIN:
+
+```text
+debug BIN   d661252d83bb3b96ef2f8a261ee87cdb2dfb923fc8c2cdbe76d619fdd68da28e
+release BIN 88d90dd550074fcd174287c585c910a740145f6067ef8dc1bfc9fd70bf0cdaad
+```
+
 ## Межа перевірки
 
-Прошивку не заливав на плату. Watchdog panic/core dump recovery, реальну швидкість TFT, SPI 80 MHz, енергоспоживання, light-sleep wakeup кнопками/PIR, UART/I2C після пробудження та PWM/час фізичного зупинення вентилятора потрібно перевірити на пристрої. Desktop tests, native build і ELF/BIN checks підтверджують код та артефакти, але не ці фізичні ефекти.
+Виправлену прошивку `19227c8` ще не перевірено на платі. Watchdog panic/core dump recovery, реальну швидкість TFT, SPI 80 MHz, енергоспоживання, light-sleep wakeup кнопками/PIR, UART/I2C після пробудження та PWM/час фізичного зупинення вентилятора потрібно перевірити на пристрої. Desktop tests, native build і ELF/BIN checks підтверджують код та артефакти, але не ці фізичні ефекти.
 
