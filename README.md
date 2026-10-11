@@ -27,6 +27,17 @@ The debug profile enables heap poisoning, periodic integrity checks and a bounde
 leak tracing, `e` stop/dump tracing, `c` show the stored crash dump address/size.
 Tracing and heap poisoning are compiled out of the release profile.
 
+The ST7796S transport uses `esp_lcd` on SPI2 at the existing 80 MHz frequency,
+with RGB565 data sent through DMA. Two 480 x 16-pixel internal DMA buffers use
+30,720 bytes by default; no full-screen framebuffer or PSRAM is allocated.
+A planning pass finds the changed rectangle, then the complete scene is clipped
+into successive tiles within that rectangle. This preserves transparent text,
+labels and backgrounds during incremental overview updates. Rasterization of the
+next tile overlaps the previous SPI transfer. Completion is acknowledged before
+buffer reuse, display commands or backlight wake-up. Hidden/sleeping pages do not
+send pixel data. Service shows transfer count and buffer size. Tile height is a
+menuconfig setting; physical SPI timing and actual render speed need board tests.
+
 ## Controls and screens
 
 - Left button: **GPIO7 to GND**.

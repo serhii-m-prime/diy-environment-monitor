@@ -9,17 +9,19 @@
 
 namespace monitor {
 
-// Canvas is the existing Adafruit display, or the recording canvas in host tests.
-// Only the selected page is drawn. No off-screen canvas or framebuffer is allocated.
+// Canvas is the DMA tile rasterizer, or a recording canvas in host tests.
+// Only the selected page is drawn; the renderer does not own a framebuffer.
 template<class Canvas> class MonitorUi {
 public:
     explicit MonitorUi(Canvas &canvas) : canvas_(canvas) {}
 
     bool render(Navigation &nav, const Readings &r, const History &history,
-                uint32_t nowSeconds, const Diagnostics &diag) {
+                uint32_t nowSeconds, const Diagnostics &diag, bool commit = true,
+                bool forceFullScene = false) {
         if (!nav.needsRender()) return false;
         const Page page = nav.page();
-        const bool changedPage = !painted_ || page != paintedPage_;
+        const bool changedPage = forceFullScene || !painted_ || page != paintedPage_;
+        const Readings before = previous_;
         canvas_.setTextWrap(false);
         if (changedPage) {
             canvas_.fillScreen(Background);
@@ -35,10 +37,16 @@ public:
         case Page::Service: service(history, diag); break;
         default: break;
         }
-        painted_ = true;
-        paintedPage_ = page;
-        nav.rendered();
+        if (commit) completeFrame(nav, r);
+        else previous_ = before; // planning/replay cannot consume overview changes
         return true;
+    }
+
+    void completeFrame(Navigation &nav, const Readings &r) {
+        painted_ = true;
+        paintedPage_ = nav.page();
+        previous_ = r;
+        nav.rendered();
     }
 
 private:
@@ -283,7 +291,7 @@ private:
         } else text(150, 302, "3 min / point | gaps = no data", 1, Muted);
     }
     void service(const History &history, const Diagnostics &d) {
-        canvas_.fillRect(12, 52, 456, 242, Background);
+        canvas_.fillRect(12, 52, 456, 248, Background);
         char buffer[72];
         int y = 56;
         auto row = [&](const char *s) { text(14, y, s, 2); y += 21; };
@@ -298,6 +306,8 @@ private:
         std::snprintf(buffer, sizeof(buffer), "Frames %lu | errors %lu", (unsigned long)d.renders, (unsigned long)d.sensorErrors); row(buffer);
         std::snprintf(buffer, sizeof(buffer), "PIR %s | fan %s | LED %u", d.motion ? "ON" : "OFF", d.fanOn ? "ON" : "OFF", d.brightness); row(buffer);
         text(14, y + 2, "Loop = work + delay; render = last frame", 1, Muted);
+        std::snprintf(buffer, sizeof(buffer), "SPI DMA %lu transfers | buffers %lu B", (unsigned long)d.dmaTransfers, (unsigned long)d.dmaBufferBytes);
+        text(14, y + 14, buffer, 1, Muted);
     }
 };
 

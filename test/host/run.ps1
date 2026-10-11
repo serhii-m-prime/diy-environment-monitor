@@ -36,6 +36,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'UI test compilation failed' }
     & ./.pio/host-tests/ui_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'UI tests failed' }
+    & $Cxx -std=c++17 -Wall -Wextra -Werror -Ilib/App '-I.pio/libdeps/esp32-s3-debug/Adafruit GFX Library' test/host/tile_tests.cpp `
+        -o .pio/host-tests/tile_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Tile test compilation failed' }
+    & ./.pio/host-tests/tile_tests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Tile tests failed' }
     & $Cxx -std=c++17 -Wall -Wextra -Itest/host/runtime -Itest/host/stubs -Ilib/Sensors -Ilib/App -Ilib/Platform `
         test/host/runtime_tests.cpp lib/Sensors/GPIOButton.cpp lib/Sensors/PIRMotionSensor.cpp `
         lib/Sensors/CO2Sensor_MHZ19.cpp lib/Sensors/LightSensor_BH1750.cpp `

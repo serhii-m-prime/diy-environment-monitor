@@ -1,7 +1,11 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
+#ifdef ESP_PLATFORM
+#include <DmaDisplay.h>
+#else
 #include <Adafruit_ST7796S.h>
+#endif
 #include <Debug.h>
 #include <GPIOButton.h>
 #include <PIRMotionSensor.h>
@@ -35,9 +39,15 @@ constexpr uint32_t SensorStackBytes = CONFIG_MONITOR_SENSOR_STACK_BYTES;
 constexpr uint32_t InputStackBytes = 3072, SensorStackBytes = 6144;
 #endif
 
+#ifdef ESP_PLATFORM
+constexpr uint8_t ST77XX_DISPOFF = 0x28, ST77XX_DISPON = 0x29;
+DmaDisplay display;
+MonitorUi<DmaDisplay> ui(display);
+#else
 SPIClass displaySpi(HSPI);
 Adafruit_ST7796S display(&displaySpi, TftCs, TftDc, TftReset);
 MonitorUi<Adafruit_ST7796S> ui(display);
+#endif
 Navigation navigation;
 History history;
 HistoryAverage historyAverage;
@@ -157,12 +167,16 @@ void sensorTask(void *) {
 void setup() {
     DEBUG_BEGIN(115200);
     configurePwm(BacklightPin, FanPin);
+#ifdef ESP_PLATFORM
+    display.begin(TftClock, TftMosi, TftCs, TftDc, TftReset, SpiFrequency);
+#else
     displaySpi.begin(TftClock, -1, TftMosi, TftCs);
     display.init(320, 480, 0, 0, ST7796S_BGR);
     display.setSPISpeed(SpiFrequency);
     display.setRotation(3);
     display.sendCommand(ST77XX_INVOFF);
     display.sendCommand(ST77XX_DISPOFF);
+#endif
 
     inputMailbox = xQueueCreate(1, sizeof(InputSnapshot));
     sensorMailbox = xQueueCreate(1, sizeof(SensorSnapshot));
@@ -250,7 +264,13 @@ void loop() {
         diagnostics.minHeap = ESP.getMinFreeHeap();
 #endif
         const uint32_t renderStart = micros();
+#ifdef ESP_PLATFORM
+        display.render(ui, navigation, sensors.readings, history, uptime.seconds(), diagnostics);
+        diagnostics.dmaTransfers = display.transfers();
+        diagnostics.dmaBufferBytes = DmaDisplay::BufferBytes;
+#else
         ui.render(navigation, sensors.readings, history, uptime.seconds(), diagnostics);
+#endif
         diagnostics.renderUs = micros() - renderStart;
         diagnostics.maxRenderUs = std::max(diagnostics.maxRenderUs, diagnostics.renderUs);
         ++diagnostics.renders;
