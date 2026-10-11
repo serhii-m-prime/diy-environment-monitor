@@ -20,7 +20,8 @@ Run with a C++17 host compiler:
 - `history_average_tests.cpp` (C++11) covers three-minute means, signed rounding,
   per-channel invalid data, missed samples, duplicate/out-of-order snapshots,
   outage recovery and timestamp rollover.
-- `brightness_tests.cpp` (C++11) covers deadband boundaries, transient shadows,
+- `brightness_tests.cpp` (C++11) covers the calibrated lux/PWM ratio (including
+  30 lux -> 1920/4096 duty), darkness floor, full-scale saturation, deadband boundaries, transient shadows,
   confirmation/reset, smooth monotonic ramps, invalid data, saturation, sleep/wake
   and clock rollover. Runtime tests also verify that repeated light snapshots do
   not satisfy confirmation and PWM changes alone never redraw the selected page.

@@ -21,7 +21,7 @@ int main() {
     SensorSnapshot sample;
     sample.readings.valid = Environment | CO2 | Light;
     sample.readings.temperature = 22; sample.readings.humidity = 45;
-    sample.readings.pressure = 1013; sample.readings.co2 = 800; sample.readings.light = 100;
+    sample.readings.pressure = 1013; sample.readings.co2 = 800; sample.readings.light = 30;
     sample.lightSequence = 1;
     sample.sampleSequence = 1;
     sample.samplePoint = HistoryPoint::from(1, sample.readings);
@@ -30,7 +30,7 @@ int main() {
     assert(display.on && history.size() == 0 && display.draws > 0 && mockBacklight == 0);
     const auto initialDraws = display.draws;
     while (testTime < 9000) loop();
-    assert(display.draws == initialDraws && mockBacklight == 400); // PWM fade does not redraw pixels
+    assert(display.draws == initialDraws && mockBacklight == 1920); // 30 lux gives 46.875% of the 12-bit timer
     sample.readings.light = 0;
     ++sample.lightSequence;
     xQueueOverwrite(sensorMailbox, &sample);
@@ -39,24 +39,24 @@ int main() {
     for (unsigned t : {11000U, 12000U}) {
         xQueueOverwrite(sensorMailbox, &sample);
         testTime = t; loop();
-        assert(backlight.target() == 400 && mockBacklight == 400);
+        assert(backlight.target() == 1920 && mockBacklight == 1920);
     }
-    sample.readings.light = 100;
+    sample.readings.light = 30;
     ++sample.lightSequence;
     xQueueOverwrite(sensorMailbox, &sample);
     testTime = 13000; loop();
-    assert(backlight.target() == 400);
-    sample.readings.light = 200;
+    assert(backlight.target() == 1920);
+    sample.readings.light = 60;
     for (unsigned t : {14000U, 15000U, 16000U}) {
         ++sample.lightSequence;
         xQueueOverwrite(sensorMailbox, &sample);
         testTime = t; loop();
-        assert(mockBacklight < 800);
+        assert(mockBacklight < 3840);
     }
-    assert(backlight.target() == 800);
+    assert(backlight.target() == 3840);
     const auto settledDraws = display.draws;
     while (testTime < 29000) loop();
-    assert(history.size() == 0 && mockBacklight == 800 && display.draws == settledDraws);
+    assert(history.size() == 0 && mockBacklight == 3840 && display.draws == settledDraws);
     testTime = 31000; loop();
     assert(!display.on && mockBacklight == 0);
     const auto offDraws = display.draws;
@@ -88,17 +88,17 @@ int main() {
     assert(mockBacklight == 0); // wake does not jump to retained target
     const auto graphDraws = display.draws;
     while (testTime < 128000) loop();
-    assert(mockBacklight == 800 && display.draws == graphDraws);
-    sample.readings.light = 50;
+    assert(mockBacklight == 3840 && display.draws == graphDraws);
+    sample.readings.light = 15;
     ++sample.lightSequence;
     xQueueOverwrite(sensorMailbox, &sample);
     loop();
-    assert(display.draws == graphDraws && mockBacklight == 800); // transient and hidden overview not drawn
+    assert(display.draws == graphDraws && mockBacklight == 3840); // transient and hidden overview not drawn
     sample.readings.valid &= ~Light; // retain brightness through sensor failure
     ++sample.lightSequence;
     xQueueOverwrite(sensorMailbox, &sample);
     loop();
-    assert(display.draws == graphDraws && mockBacklight == 800);
+    assert(display.draws == graphDraws && mockBacklight == 3840);
     testTime = 160000; loop();
     assert(!display.on);
     input.rightPresses = 5; // four presses accumulated while loop was busy

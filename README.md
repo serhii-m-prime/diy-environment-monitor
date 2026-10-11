@@ -130,6 +130,13 @@ Sensor collection and target updates continue with the screen off.
   Fixed-size, one-element FreeRTOS queues transfer snapshots without sharing
   mutable sensor/UI objects. Button counters preserve presses across overwrites.
 
+Backlight uses its own 12-bit, 5 kHz LEDC timer. Auto brightness maps each lux to
+64 duty counts, with a visible floor of 48/4096 and saturation at 4095 near 64 lux;
+30 lux gives 1920/4096 (46.875%). This preserves the effective PWM ratio of the
+Arduino baseline, where the fan configuration reduced the shared timer to 8 bits.
+The service screen's LED value is the actual 12-bit duty. Confirmation, hysteresis
+and smooth fades filter brief shadows; invalid light samples retain the last target.
+
 Service shows last/max render duration, last/max complete main-loop duration
 (including delay), environment/CO2 read duration, last sample age, free/minimum
 heap, history occupancy/size, uptime, render passes, failed read count, PIR/fan

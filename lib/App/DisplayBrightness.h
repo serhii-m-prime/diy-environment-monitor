@@ -12,14 +12,20 @@ class DisplayBrightness {
 public:
     static constexpr uint32_t ConfirmationMs = 2000, MaxSampleGapMs = 1500;
     static constexpr uint32_t SmoothMs = 1200, WakeSmoothMs = 250, WakeDurationMs = 900;
-    static constexpr uint16_t FallbackDuty = 240, MinDuty = 3, MaxDuty = 4095;
+    // The Arduino baseline shared an 8-bit timer with the fan. Preserve its
+    // effective backlight level on our independent 12-bit timer (16x counts).
+    // About 64 lux reaches full brightness; darkness retains a dim visible floor.
+    static constexpr uint16_t FallbackDuty = 3840, MinDuty = 48, MaxDuty = 4095;
+    static constexpr uint16_t MinDeadbandDuty = 192;
+    static constexpr float DutyPerLux = 64.0f;
 
     void observe(float lux, bool valid, uint32_t now) {
         if (!valid || !std::isfinite(lux) || lux < 0) {
             pendingDirection_ = 0; // retain the last accepted target after a failure
             return;
         }
-        const uint16_t requested = static_cast<uint16_t>(std::max(3.0f, std::min(4095.0f, lux * 4.0f)));
+        const uint16_t requested = static_cast<uint16_t>(
+            std::max(float(MinDuty), std::min(float(MaxDuty), lux * DutyPerLux)));
         if (!lightSeen_) {
             target_ = requested;
             lightSeen_ = true;
@@ -29,7 +35,7 @@ public:
         if (uint32_t(now - lastSample_) > MaxSampleGapMs) pendingDirection_ = 0;
         lastSample_ = now;
         // Hysteresis relative to the accepted target, not the moving PWM output.
-        const int deadband = std::max(12, int(target_) * 15 / 100);
+        const int deadband = std::max(int(MinDeadbandDuty), int(target_) * 15 / 100);
         const int difference = int(requested) - target_;
         const int direction = difference > deadband ? 1 : difference < -deadband ? -1 : 0;
         if (!direction) { pendingDirection_ = 0; return; }
