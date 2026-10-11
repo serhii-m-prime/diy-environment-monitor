@@ -65,7 +65,11 @@ TaskHandle_t inputTaskHandle = nullptr, sensorTaskHandle = nullptr, uiTaskHandle
 RuntimeDiagnostics runtimeDiagnostics;
 PowerRuntime powerRuntime;
 void notifyUi() { if (uiTaskHandle) xTaskNotifyGive(uiTaskHandle); }
-void IRAM_ATTR inputEdge(void *) {
+void inputEdge(void *context) {
+    // IDF GPIO sleep wakeup also selects level interrupts. Mask the current
+    // pin until the worker selects its opposite level; a held input cannot
+    // repeatedly enter the ISR and starve the debouncer.
+    gpio_intr_disable(static_cast<gpio_num_t>(reinterpret_cast<intptr_t>(context)));
     BaseType_t wake = pdFALSE;
     vTaskNotifyGiveFromISR(inputTaskHandle, &wake);
     if (wake) portYIELD_FROM_ISR();
@@ -96,11 +100,11 @@ void inputTask(void *) {
     pir.setDebounceDelay(20);
 #ifdef ESP_PLATFORM
     inputTaskHandle = xTaskGetCurrentTaskHandle();
-    const auto isrResult = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    const auto isrResult = gpio_install_isr_service(0);
     if (isrResult != ESP_OK && isrResult != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(isrResult);
     for (int pin : {LeftPin, RightPin, PirPin}) {
         ESP_ERROR_CHECK(gpio_set_intr_type(static_cast<gpio_num_t>(pin), GPIO_INTR_ANYEDGE));
-        ESP_ERROR_CHECK(gpio_isr_handler_add(static_cast<gpio_num_t>(pin), inputEdge, nullptr));
+        ESP_ERROR_CHECK(gpio_isr_handler_add(static_cast<gpio_num_t>(pin), inputEdge, reinterpret_cast<void *>(intptr_t(pin))));
     }
     powerRuntime.configureInputWake(LeftPin, RightPin, PirPin);
     InputWaitPolicy waitPolicy;
@@ -121,7 +125,14 @@ void inputTask(void *) {
         const uint8_t levels = (digitalRead(LeftPin) == HIGH ? 1 : 0) |
             (digitalRead(RightPin) == HIGH ? 2 : 0) | (digitalRead(PirPin) == HIGH ? 4 : 0);
         const auto waitMs = waitPolicy.observe(millis(), levels);
-        for (int pin : {LeftPin, RightPin, PirPin}) powerRuntime.inputWake(pin);
+        const int pins[] = {LeftPin, RightPin, PirPin};
+        for (unsigned i = 0; i < 3; ++i) {
+            const int pin = pins[i];
+            // Arm against the same levels seen by the wait policy. An edge
+            // between the sample and re-arm then triggers immediately.
+            powerRuntime.inputWake(pin, (levels & (1u << i)) != 0);
+            ESP_ERROR_CHECK(gpio_intr_enable(static_cast<gpio_num_t>(pin)));
+        }
         if (waitMs == 10) vTaskDelay(pdMS_TO_TICKS(10));
         else ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(waitMs));
 #else
@@ -144,6 +155,9 @@ void sensorTask(void *) {
         Wire.begin(SdaPin, SclPin);
         Wire.setTimeOut(50);
         co2.begin(); environment.begin(); light.begin();
+#ifdef ESP_PLATFORM
+        Serial2.flush(); // finish the calibration command before permitting sleep
+#endif
     }
     Uptime sensorUptime;
     SampleSchedule schedule(millis());

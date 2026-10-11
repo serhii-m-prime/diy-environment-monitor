@@ -12,7 +12,9 @@ if (-not $Pio) {
     }
 }
 Push-Location (Join-Path $PSScriptRoot '..')
+$previousCoreDir = $env:PLATFORMIO_CORE_DIR
 try {
+    $env:PLATFORMIO_CORE_DIR = Join-Path (Get-Location).Path '.pio/idf-core'
     New-Item -ItemType Directory -Force '.pio/validation' | Out-Null
     foreach ($profile in $Environment) {
         if ($FreshConfig) {
@@ -21,7 +23,20 @@ try {
                 if (Test-Path -LiteralPath $generated) { Remove-Item -LiteralPath $generated }
             }
         }
-        & $Pio run -e $profile 2>&1 | Tee-Object -FilePath ".pio/validation/$profile.log"
-        if ($LASTEXITCODE -ne 0) { throw "Firmware build failed: $profile" }
+        # Windows PowerShell 5 treats even informational native stderr as an
+        # ErrorRecord. Preserve that output, but decide failure by exit code.
+        $previousErrorAction = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            & $Pio run -e $profile 2>&1 | ForEach-Object { $_.ToString() } |
+                Tee-Object -FilePath ".pio/validation/$profile.log"
+            $buildExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $previousErrorAction
+        }
+        if ($buildExit -ne 0) { throw "Firmware build failed: $profile (exit $buildExit)" }
     }
-} finally { Pop-Location }
+} finally {
+    $env:PLATFORMIO_CORE_DIR = $previousCoreDir
+    Pop-Location
+}

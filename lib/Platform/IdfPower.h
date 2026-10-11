@@ -32,21 +32,21 @@ public:
 #if CONFIG_MONITOR_POWER_MANAGEMENT && CONFIG_MONITOR_AUTO_LIGHT_SLEEP
         for (int pin : {left, right, pir}) {
             ESP_ERROR_CHECK(gpio_sleep_sel_dis(static_cast<gpio_num_t>(pin)));
-            inputWake(pin);
+            inputWake(pin, gpio_get_level(static_cast<gpio_num_t>(pin)) != 0);
         }
         ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
 #else
         (void)left; (void)right; (void)pir;
 #endif
     }
-    void inputWake(int pin) {
+    void inputWake(int pin, bool high) {
 #if CONFIG_MONITOR_POWER_MANAGEMENT && CONFIG_MONITOR_AUTO_LIGHT_SLEEP
         const auto gpio = static_cast<gpio_num_t>(pin);
         // Sleep on the opposite level: held-low buttons or held-high PIR never
         // cause a wake loop, and their release can still wake the debouncer.
-        ESP_ERROR_CHECK(gpio_wakeup_enable(gpio, gpio_get_level(gpio) ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL));
+        ESP_ERROR_CHECK(gpio_wakeup_enable(gpio, high ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL));
 #else
-        (void)pin;
+        (void)pin; (void)high;
 #endif
     }
 private:

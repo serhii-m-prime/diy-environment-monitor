@@ -31,7 +31,7 @@ public:
         config.spi_mode = 0; config.pclk_hz = frequency;
         config.trans_queue_depth = 2; config.lcd_cmd_bits = 8; config.lcd_param_bits = 8;
         config.on_color_trans_done = completed; config.user_ctx = this;
-        ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(reinterpret_cast<esp_lcd_spi_bus_handle_t>(SPI2_HOST), &config, &io_));
+        ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(static_cast<esp_lcd_spi_bus_handle_t>(SPI2_HOST), &config, &io_));
         ESP_ERROR_CHECK(gpio_set_direction(static_cast<gpio_num_t>(reset), GPIO_MODE_OUTPUT));
         gpio_set_level(static_cast<gpio_num_t>(reset), 0); delay(20);
         gpio_set_level(static_cast<gpio_num_t>(reset), 1); delay(150);
@@ -73,7 +73,7 @@ public:
     static constexpr int TileRows = CONFIG_MONITOR_DMA_TILE_ROWS;
     static constexpr uint32_t BufferBytes = Width * TileRows * 2 * 2;
 private:
-    static bool completed(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t *, void *context) {
+    static bool IRAM_ATTR completed(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t *, void *context) {
         BaseType_t wake = pdFALSE;
         xSemaphoreGiveFromISR(static_cast<DmaDisplay *>(context)->done_, &wake);
         return wake == pdTRUE;

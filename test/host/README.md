@@ -15,8 +15,8 @@ Run with a C++17 host compiler:
   temperature/humidity/CO2 guidance boundaries, including neutral pressure.
 - `pressure_tests.cpp` covers 3-hour pressure deltas over paired three-minute means,
   intensity/direction boundaries, warm-up, stale/invalid/missing samples, timestamp
-  jitter, circular overwrite and timer rollover. This target uses C++11, matching
-  the firmware's language standard.
+  jitter, circular overwrite and timer rollover. Core algorithms retain C++11
+  compatibility; the SDK uses its configured modern C++ standard.
 - `history_average_tests.cpp` (C++11) covers three-minute means, signed rounding,
   per-channel invalid data, missed samples, duplicate/out-of-order snapshots,
   outage recovery and timestamp rollover.
@@ -27,7 +27,7 @@ Run with a C++17 host compiler:
 - `ui_tests.cpp` runs the production renderer against a recording canvas. Checks
   screen bounds, no rendering while off or clean, unchanged overview tiles and
   missing-data graph gaps and pressure in mmHg. Exports all seven screen SVGs with synthetic readings.
-  The installed Adafruit GFX bitmap font is used when available, otherwise SVG text.
+  The committed Adafruit classic bitmap font is always used, matching the device.
   Overview checks include text containment and overlap at normal/maximum readings,
   negative temperature and N/A, plus previews of partial updates after digit-count changes.
   Also checks rising/falling multi-band transitions, flat boundary values,
@@ -43,6 +43,12 @@ Run with a C++17 host compiler:
   pressure analysis with the display off. A bounded execution of the real sensor worker
   verifies that BME measurements occur after 15 seconds of fan operation and
   2 seconds of settling, with minute sample cadence.
+- `tile_tests.cpp` compares a complete software framebuffer with clipped tile
+  replay for all seven pages, partial overview updates and sleep/wake. Checks
+  buffer boundaries, odd widths, clipping and RGB565 wire byte order. Framebuffers
+  are used by this host test only; production allocates two small DMA tiles.
+- `power_policy_tests.cpp` covers notification/debounce waits, held-input wake
+  levels, delayed fan-off settling deadlines and time rollover.
 
 Generated binaries and previews are in `.pio/host-tests`. These tests do not run
 FreeRTOS scheduling, real UART/I2C, physical TFT transfers or hardware timing.

@@ -19,7 +19,7 @@ The explicit partition table reserves a crash-dump partition separately from RAM
 
 All three application tasks and both CPU idle tasks are watched by a 10-second
 task watchdog; a stalled task causes a panic/reboot with an ELF core dump in the
-128 KiB `coredump` partition. Keep the matching `.pio/build/<profile>/firmware.elf`
+128 KiB `coredump` partition. Keep the matching `.pio/native-build/<profile>/firmware.elf`
 to decode a crash. Service diagnostics include reset reason, largest free internal
 heap block and the minimum unused stack bytes for input/sensor/UI tasks.
 The debug profile enables heap poisoning, periodic integrity checks and a bounded
@@ -42,11 +42,13 @@ Dynamic frequency scaling uses 40..240 MHz, with a maximum-frequency lock while
 rasterizing/transmitting a frame. Automatic light sleep is enabled through tickless
 idle; internal RAM history is retained. Display-on, fan-on and active sensor I/O
 hold separate no-light-sleep locks, preserving PWM and UART/I2C transactions.
-Input GPIO edge interrupts wake the debouncer; 10 ms polling is limited to its
+Input GPIO interrupts wake the debouncer; 10 ms polling is limited to its
 70 ms settling window. Stable/held inputs wait for notifications, with a 1-second
 watchdog heartbeat. GPIO sleep wakeup uses the opposite of each current level,
-so held buttons and sustained PIR do not create a wake storm. The sensor worker
-waits for the next light/fan/settling deadline; the sleeping UI wakes on snapshots
+so held buttons and sustained PIR do not create a wake storm.
+The ISR masks its pin until the worker re-arms it, since IDF's GPIO sleep wakeup
+also selects the GPIO interrupt level. This prevents repeated level interrupts.
+The sensor worker waits for the next light/fan/settling deadline; the sleeping UI wakes on snapshots
 and input changes. No deep sleep or flash persistence is used. DFS/light sleep and
 minimum frequency are configurable under **Environment monitor**.
 Actual current draw, wake behavior, UART activity and PWM continuity need board tests.
@@ -123,8 +125,8 @@ Sensor collection and target updates continue with the screen off.
   The overview updates only the numeric band of changed tiles; graphs update with
   fresh measurements/page/wake events; the service screen refreshes once per second.
   No full-screen framebuffer.
-- Buttons and PIR are polled every 10 ms in a dedicated task. A separate task owns
-  I2C/UART and the sensors. The Arduino loop alone owns the TFT, history and UI.
+- Buttons and PIR use GPIO interrupts and 10 ms debounce polling in a dedicated
+  task. A separate task owns I2C/UART and the sensors. The UI task alone owns the TFT and history.
   Fixed-size, one-element FreeRTOS queues transfer snapshots without sharing
   mutable sensor/UI objects. Button counters preserve presses across overwrites.
 
@@ -149,22 +151,28 @@ subsequent minute samples. BH1750 initialization is retried after errors every 3
 | Fan PWM | 6 |
 
 The PlatformIO profile is `esp32-s3-devkitc-1` (8 MB flash, no PSRAM), pinned to
-`platformio/espressif32@6.13.0` (Arduino ESP32 2.0.17, including the LEDC channel API).
+PIOArduino 55.03.312-1, ESP-IDF 5.5.5 and the Arduino 3.3.12 source component.
 Physical wiring and the exact module variant must match your hardware.
 
 ## Build and verify
 
 ```powershell
-pio run -e esp32-s3-debug -e esp32-s3-release
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/build.ps1 -FreshConfig
 ./test/host/run.ps1 -Cxx C:/msys64/ucrt64/bin/g++.exe
+python tools/verify_firmware.py
 ```
 
 Host tests cover history capacity/wrap/invalid samples, timer rollover, navigation,
 render gating, layout bounds, graph gaps, guidance boundaries and color transitions,
 pressure tendency/expiry, button/PIR debounce, sensor errors and the real worker's
 fan-off settling interval using a simulated clock.
-They generate SVG previews in `.pio/host-tests`; with the downloaded Adafruit GFX
-library present, the previews use the same bitmap font as the device.
+They generate SVG previews in `.pio/host-tests` with the committed bitmap font
+used by the device, and check tile/full-frame pixel parity and sleep scheduling.
+The firmware verifier checks the generated configuration, partition binary,
+native ELF symbols and release exclusion of heap tracing, then records artifact
+SHA-256 hashes in `.pio/validation/firmware.json`.
+Native binaries live in `.pio/native-build/<profile>`; `firmware.factory.bin`
+contains the bootloader, partitions and application at their configured offsets.
 
 On hardware, check both buttons during CO2 timeouts and TFT redraws, PIR wake/sleep,
 brightness and light-sensor disconnection, 24-hour history retention/overwrite,
