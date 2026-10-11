@@ -11,6 +11,7 @@
 #include <MonitorUi.h>
 #include <DisplayBrightness.h>
 #include <HistoryAverage.h>
+#include <MonitorPlatform.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -26,6 +27,12 @@ constexpr int BacklightPin = 5, BacklightChannel = 0;
 constexpr int FanPin = 6, FanChannel = 1;
 constexpr uint32_t SpiFrequency = 80000000;
 constexpr uint32_t LightPeriodMs = 1000, LightRetryMs = 30000;
+#ifdef ESP_PLATFORM
+constexpr uint32_t InputStackBytes = CONFIG_MONITOR_INPUT_STACK_BYTES;
+constexpr uint32_t SensorStackBytes = CONFIG_MONITOR_SENSOR_STACK_BYTES;
+#else
+constexpr uint32_t InputStackBytes = 3072, SensorStackBytes = 6144;
+#endif
 
 SPIClass displaySpi(HSPI);
 Adafruit_ST7796S display(&displaySpi, TftCs, TftDc, TftReset);
@@ -84,7 +91,7 @@ void sensorTask(void *) {
         const bool fan = schedule.fanNeeded();
         if (fan != snapshot.fanOn) {
             snapshot.fanOn = fan;
-            ledcWrite(FanChannel, fan ? 142 : 0);
+            writePwm(FanChannel, fan ? 142 : 0);
             publish = true;
         }
         const bool sampleDue = schedule.due(now);
@@ -128,7 +135,7 @@ void sensorTask(void *) {
             ++snapshot.sampleSequence;
             schedule.sampled(now);
             snapshot.fanOn = false;
-            ledcWrite(FanChannel, 0);
+            writePwm(FanChannel, 0);
             publish = true;
         }
         if (publish) xQueueOverwrite(sensorMailbox, &snapshot);
@@ -140,12 +147,7 @@ void sensorTask(void *) {
 
 void setup() {
     DEBUG_BEGIN(115200);
-    ledcSetup(BacklightChannel, 5000, 12);
-    ledcAttachPin(BacklightPin, BacklightChannel);
-    ledcWrite(BacklightChannel, 0);
-    ledcSetup(FanChannel, 5000, 8);
-    ledcAttachPin(FanPin, FanChannel);
-    ledcWrite(FanChannel, 0);
+    configurePwm(BacklightPin, FanPin);
     displaySpi.begin(TftClock, -1, TftMosi, TftCs);
     display.init(320, 480, 0, 0, ST7796S_BGR);
     display.setSPISpeed(SpiFrequency);
@@ -157,8 +159,8 @@ void setup() {
     sensorMailbox = xQueueCreate(1, sizeof(SensorSnapshot));
     if (!inputMailbox || !sensorMailbox) abort();
     // ESP-IDF task stack sizes are bytes. No task allocates a framebuffer.
-    if (xTaskCreatePinnedToCore(inputTask, "buttons", 3072, nullptr, 2, nullptr, 0) != pdPASS) abort();
-    if (xTaskCreatePinnedToCore(sensorTask, "sensors", 4096, nullptr, 1, nullptr, 0) != pdPASS) abort();
+    if (xTaskCreatePinnedToCore(inputTask, "buttons", InputStackBytes, nullptr, 2, nullptr, 0) != pdPASS) abort();
+    if (xTaskCreatePinnedToCore(sensorTask, "sensors", SensorStackBytes, nullptr, 1, nullptr, 0) != pdPASS) abort();
 }
 
 void loop() {
@@ -198,7 +200,7 @@ void loop() {
 
     const bool on = activity.update(now, inputs.motion, pressed);
     if (on != navigation.isOn()) {
-        if (!on) ledcWrite(BacklightChannel, 0);
+        if (!on) writePwm(BacklightChannel, 0);
         display.sendCommand(on ? ST77XX_DISPON : ST77XX_DISPOFF);
         navigation.setOn(on);
     }
@@ -234,8 +236,22 @@ void loop() {
     }
     static uint16_t previousBrightness = 0;
     if (diagnostics.brightness != previousBrightness) {
-        ledcWrite(BacklightChannel, diagnostics.brightness);
+        writePwm(BacklightChannel, diagnostics.brightness);
         previousBrightness = diagnostics.brightness;
     }
     delay(10);
 }
+
+#ifdef ESP_PLATFORM
+namespace {
+void uiTask(void *) {
+    setup();
+    for (;;) loop();
+}
+}
+extern "C" void app_main() {
+    initArduino();
+    if (xTaskCreatePinnedToCore(uiTask, "ui", CONFIG_MONITOR_UI_STACK_BYTES,
+                              nullptr, 1, nullptr, 1) != pdPASS) abort();
+}
+#endif

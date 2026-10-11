@@ -2,6 +2,21 @@
 
 ESP32-S3 + ST7796S (480 x 320 landscape), MH-Z19, BME280, BH1750 and PIR.
 
+## Firmware framework
+
+ESP-IDF 5.5.5 with Arduino 3.3.12 compiled as a component, pinned through
+PIOArduino 55.03.312-1. CMake builds the SDK from source. The application owns
+`app_main()` and its UI task; Arduino automatic `setup()/loop()` startup is disabled.
+Only Wire and SPI Arduino libraries are selected. Sensor algorithms and UI behavior
+are preserved. PWM uses the native IDF LEDC driver and a fixed XTAL clock.
+
+PlatformIO packages and their locks live in `.pio/idf-core`, independent of other
+projects. Build both profiles with `platformio run`, or open configuration with
+`platformio run -e esp32-s3-debug -t menuconfig`. Committed defaults are in
+`config/sdkconfig.common`, `.debug` and `.release`; app settings are under
+**Environment monitor**. The ESP32-S3-DevKitC-1 target uses 8 MB flash and no PSRAM.
+The explicit partition table reserves a crash-dump partition separately from RAM history.
+
 ## Controls and screens
 
 - Left button: **GPIO7 to GND**.

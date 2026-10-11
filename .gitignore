@@ -4,3 +4,8 @@
 .vscode/launch.json
 .vscode/ipch
 eg/
+sdkconfig.esp32-s3-*
+sdkconfig.defaults
+sdkconfig.old
+build/
+managed_components/

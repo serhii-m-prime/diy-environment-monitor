@@ -1,0 +1,14 @@
+menu "Environment monitor"
+    config MONITOR_INPUT_STACK_BYTES
+        int "Input task stack (bytes)"
+        range 2048 8192
+        default 3072
+    config MONITOR_SENSOR_STACK_BYTES
+        int "Sensor task stack (bytes)"
+        range 4096 16384
+        default 6144
+    config MONITOR_UI_STACK_BYTES
+        int "UI task stack (bytes)"
+        range 4096 16384
+        default 8192
+endmenu

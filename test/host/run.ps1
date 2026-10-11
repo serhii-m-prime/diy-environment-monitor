@@ -36,7 +36,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'UI test compilation failed' }
     & ./.pio/host-tests/ui_tests.exe
     if ($LASTEXITCODE -ne 0) { throw 'UI tests failed' }
-    & $Cxx -std=c++17 -Wall -Wextra -Itest/host/runtime -Itest/host/stubs -Ilib/Sensors -Ilib/App `
+    & $Cxx -std=c++17 -Wall -Wextra -Itest/host/runtime -Itest/host/stubs -Ilib/Sensors -Ilib/App -Ilib/Platform `
         test/host/runtime_tests.cpp lib/Sensors/GPIOButton.cpp lib/Sensors/PIRMotionSensor.cpp `
         lib/Sensors/CO2Sensor_MHZ19.cpp lib/Sensors/LightSensor_BH1750.cpp `
         lib/Sensors/TempHumPressSensor_BME280.cpp -o .pio/host-tests/runtime_tests.exe
