@@ -21,8 +21,9 @@ ESP32-S3 + ST7796S (480 x 320 landscape), MH-Z19, BME280, BH1750 and PIR.
   change: <=1.5 hPa green, >1.5 to 3.5 hPa yellow, >3.5 hPa red, in either direction.
   The pressure screen shows the signed change in mmHg, direction, and min/max/span
   of available three-minute averages over 24 hours. The absolute pressure number stays blue.
-  Its plot spans 426 x 180 pixels, with the current value and 3-hour change above,
-  statistics below and the color legend between the navigation labels.
+- Every graph spans 426 x 180 pixels, with the current value and its guidance (or the
+  pressure 3-hour change) above, 24-hour min/max/span below and the color legend
+  between the navigation labels.
 
 The display is initially visible for 30 seconds. PIR motion keeps it on; a button
 press wakes it and changes the page. After motion ends or the last button press,

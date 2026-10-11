@@ -161,8 +161,7 @@ private:
         }
         part(1);
     }
-    void pressureSummary(bool valid, const History &history, uint32_t now,
-                         size_t count, float low, float high) {
+    void pressureSummary(bool valid, const History &history, uint32_t now) {
         const auto trend = valid ? latestPressureTrend(history, now) : PressureTrend{};
         const uint16_t color = guidanceColor(trend.guidance());
         char buffer[64];
@@ -185,31 +184,24 @@ private:
                 canvas_.drawFastHLine(450, 65, 13, color);
             }
         } else text(252, 60, valid ? "3h: insufficient data" : "3h: no valid pressure", 1, Muted);
-        if (count) {
-            std::snprintf(buffer, sizeof(buffer), "24h min %.1f max %.1f mmHg", low, high);
-            text(42, 286, buffer, 1, Muted);
-            std::snprintf(buffer, sizeof(buffer), "Span %.2f mmHg", high - low);
-            text(300, 286, buffer, 1, Muted);
-        } else text(42, 286, "24h min/max/span N/A", 1, Muted);
     }
     void graph(Metric metric, const Readings &r, const History &history, uint32_t now) {
         const bool pressure = metric == Metric::Pressure;
-        // Pressure uses a compact summary above and statistics below the plot.
-        const int x0 = pressure ? 42 : 64, x1 = pressure ? 468 : 464;
-        const int y0 = pressure ? 86 : 104, y1 = pressure ? 266 : 258;
-        canvas_.fillRect(0, 50, 480, pressure ? 252 : 242, Background);
+        // Every metric uses the same 426 x 180 plot: a compact summary above, statistics below.
+        constexpr int x0 = 42, x1 = 468, y0 = 86, y1 = 266;
+        canvas_.fillRect(0, 50, 480, 252, Background);
         float latest = 0;
         const bool valid = HistoryPoint::from(now, r).value(metric, latest);
         const char *unit = metric == Metric::Temperature ? "C" :
                            metric == Metric::Humidity ? "%" : metric == Metric::CO2 ? "ppm" :
                            metric == Metric::Pressure ? "mmHg" : "lx";
+        const int decimals = metric == Metric::Temperature || metric == Metric::Humidity || metric == Metric::Pressure ? 1 : 0;
         char buffer[48];
-        if (valid) std::snprintf(buffer, sizeof(buffer), "%.*f %s",
-                                metric == Metric::Temperature || metric == Metric::Humidity || metric == Metric::Pressure ? 1 : 0, latest, unit);
+        if (valid) std::snprintf(buffer, sizeof(buffer), "%.*f %s", decimals, latest, unit);
         else std::snprintf(buffer, sizeof(buffer), "N/A");
         const Guidance level = valid ? measurementGuidance(metric, latest) : Guidance::Unavailable;
-        text(pressure ? 12 : 64, pressure ? 52 : 61, buffer, 3, guidanceColor(level));
-        if (!pressure) text(64, 90, guidanceLabel(metric, level, latest), 1, guidanceColor(level));
+        text(12, 52, buffer, 3, guidanceColor(level));
+        if (!pressure) text(252, 60, guidanceLabel(metric, level, latest), 1, guidanceColor(level));
 
         float low = 0, high = 0;
         size_t validCount = 0;
@@ -220,8 +212,16 @@ private:
             if (validCount++ == 0) low = high = v;
             else { low = std::min(low, v); high = std::max(high, v); }
         }
-        if (pressure) pressureSummary(valid, history, now, validCount, low, high);
-        if (!validCount) { low = 0; high = 1; }
+        if (pressure) pressureSummary(valid, history, now);
+        if (validCount) {
+            std::snprintf(buffer, sizeof(buffer), "24h min %.*f max %.*f %s", decimals, low, decimals, high, unit);
+            text(42, 286, buffer, 1, Muted);
+            std::snprintf(buffer, sizeof(buffer), "Span %.*f %s", pressure ? 2 : decimals, high - low, unit);
+            text(300, 286, buffer, 1, Muted);
+        } else {
+            text(42, 286, "24h min/max/span N/A", 1, Muted);
+            low = 0; high = 1;
+        }
         const float minimumSpan = metric == Metric::Temperature || metric == Metric::Pressure ? 2.0f :
                                   metric == Metric::Humidity ? 10.0f : metric == Metric::CO2 ? 200.0f : 20.0f;
         const float span = std::max(minimumSpan, high - low);
@@ -239,10 +239,9 @@ private:
         }
         for (int i = 0; i <= 6; ++i)
             canvas_.drawFastVLine(x0 + (x1 - x0) * i / 6, y0, y1 - y0 + 1, Grid);
-        const int timeY = pressure ? 273 : 269;
-        text(x0, timeY, "-24h", 1, Muted);
-        text((x0 + x1) / 2 - 12, timeY, "-12h", 1, Muted);
-        text(x1 - 18, timeY, "now", 1, Muted);
+        text(x0, 273, "-24h", 1, Muted);
+        text((x0 + x1) / 2 - 12, 273, "-12h", 1, Muted);
+        text(x1 - 18, 273, "now", 1, Muted);
 
         bool connected = false;
         int lastX = 0, lastY = 0;
@@ -270,18 +269,18 @@ private:
             lastValue = v;
             lastTrendValid = trend.valid;
         }
-        if (!validCount) text(154, 178, "No history yet", 2, Muted);
+        if (!validCount) text(171, 168, "No history yet", 2, Muted);
         if (pressure) {
             text(88, 302, "Small", 1, Reference);
             text(158, 302, "Noticeable", 1, Watch);
             text(248, 302, "Rapid", 1, Attention);
             text(318, 302, "No trend", 1, Neutral);
         } else if (guidanceEdges(metric).count) {
-            text(64, 287, "Reference", 1, Reference);
-            text(160, 287, "Watch", 1, Watch);
-            text(238, 287, "Attention", 1, Attention);
-            text(360, 287, "3 min/pt", 1, Muted);
-        } else text(90, 287, "3 min / point | gaps = no data", 1, Muted);
+            text(88, 302, "Reference", 1, Reference);
+            text(158, 302, "Watch", 1, Watch);
+            text(248, 302, "Attention", 1, Attention);
+            text(318, 302, "3 min/pt", 1, Muted);
+        } else text(150, 302, "3 min / point | gaps = no data", 1, Muted);
     }
     void service(const History &history, const Diagnostics &d) {
         canvas_.fillRect(12, 52, 456, 242, Background);
