@@ -12,6 +12,7 @@
 #include <DisplayBrightness.h>
 #include <HistoryAverage.h>
 #include <MonitorPlatform.h>
+#include <IdfDiagnostics.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -47,9 +48,14 @@ Diagnostics diagnostics;
 InputSnapshot inputs;
 SensorSnapshot sensors;
 QueueHandle_t inputMailbox = nullptr, sensorMailbox = nullptr;
+#ifdef ESP_PLATFORM
+TaskHandle_t inputTaskHandle = nullptr, sensorTaskHandle = nullptr, uiTaskHandle = nullptr;
+RuntimeDiagnostics runtimeDiagnostics;
+#endif
 
 // No callbacks in this task touch the display or shared application state.
 void inputTask(void *) {
+    watchCurrentTask();
     GPIOButton left(LeftPin), right(RightPin);
     PIRMotionSensor pir(PirPin);
     InputSnapshot snapshot;
@@ -64,12 +70,14 @@ void inputTask(void *) {
         left.update(); right.update(); pir.update();
         // Counters survive an overwritten snapshot while TFT is busy.
         xQueueOverwrite(inputMailbox, &snapshot);
+        taskHeartbeat();
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(10));
     }
 }
 
 // Sole owner of Wire, Serial2 and sensor objects. Slow I/O cannot block buttons/UI.
 void sensorTask(void *) {
+    watchCurrentTask();
     CO2Sensor_MHZ19 co2(Co2TxPin, Co2RxPin);
     TempHumPressSensor_BME280 environment(EnvironmentAddress);
     LightSensor_BH1750 light;
@@ -139,6 +147,7 @@ void sensorTask(void *) {
             publish = true;
         }
         if (publish) xQueueOverwrite(sensorMailbox, &snapshot);
+        taskHeartbeat();
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
@@ -159,8 +168,13 @@ void setup() {
     sensorMailbox = xQueueCreate(1, sizeof(SensorSnapshot));
     if (!inputMailbox || !sensorMailbox) abort();
     // ESP-IDF task stack sizes are bytes. No task allocates a framebuffer.
+#ifdef ESP_PLATFORM
+    if (xTaskCreatePinnedToCore(inputTask, "buttons", InputStackBytes, nullptr, 2, &inputTaskHandle, 0) != pdPASS) abort();
+    if (xTaskCreatePinnedToCore(sensorTask, "sensors", SensorStackBytes, nullptr, 1, &sensorTaskHandle, 0) != pdPASS) abort();
+#else
     if (xTaskCreatePinnedToCore(inputTask, "buttons", InputStackBytes, nullptr, 2, nullptr, 0) != pdPASS) abort();
     if (xTaskCreatePinnedToCore(sensorTask, "sensors", SensorStackBytes, nullptr, 1, nullptr, 0) != pdPASS) abort();
+#endif
 }
 
 void loop() {
@@ -171,6 +185,9 @@ void loop() {
     lastLoopUs = loopStart;
     const uint32_t now = millis();
     uptime.tick(now);
+#ifdef ESP_PLATFORM
+    runtimeDiagnostics.poll(now);
+#endif
 
     bool pressed = false;
     InputSnapshot nextInput;
@@ -226,8 +243,12 @@ void loop() {
     diagnostics.uptimeSeconds = uptime.seconds();
     diagnostics.sampleAgeSeconds = sensors.sampleSequence ? uptime.seconds() - sensors.samplePoint.seconds : 0;
     if (navigation.needsRender()) {
+#ifdef ESP_PLATFORM
+        runtimeDiagnostics.collect(diagnostics, inputTaskHandle, sensorTaskHandle, uiTaskHandle);
+#else
         diagnostics.freeHeap = ESP.getFreeHeap();
         diagnostics.minHeap = ESP.getMinFreeHeap();
+#endif
         const uint32_t renderStart = micros();
         ui.render(navigation, sensors.readings, history, uptime.seconds(), diagnostics);
         diagnostics.renderUs = micros() - renderStart;
@@ -239,18 +260,22 @@ void loop() {
         writePwm(BacklightChannel, diagnostics.brightness);
         previousBrightness = diagnostics.brightness;
     }
+    taskHeartbeat();
     delay(10);
 }
 
 #ifdef ESP_PLATFORM
 namespace {
 void uiTask(void *) {
+    uiTaskHandle = xTaskGetCurrentTaskHandle();
+    watchCurrentTask();
     setup();
     for (;;) loop();
 }
 }
 extern "C" void app_main() {
     initArduino();
+    initializeDiagnostics();
     if (xTaskCreatePinnedToCore(uiTask, "ui", CONFIG_MONITOR_UI_STACK_BYTES,
                               nullptr, 1, nullptr, 1) != pdPASS) abort();
 }

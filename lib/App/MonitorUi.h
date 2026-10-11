@@ -286,11 +286,13 @@ private:
         canvas_.fillRect(12, 52, 456, 242, Background);
         char buffer[72];
         int y = 56;
-        auto row = [&](const char *s) { text(14, y, s, 2); y += 25; };
+        auto row = [&](const char *s) { text(14, y, s, 2); y += 21; };
         std::snprintf(buffer, sizeof(buffer), "Render %.2f / max %.2f ms", d.renderUs / 1000.0, d.maxRenderUs / 1000.0); row(buffer);
         std::snprintf(buffer, sizeof(buffer), "Loop   %.2f / max %.2f ms", d.loopUs / 1000.0, d.maxLoopUs / 1000.0); row(buffer);
         std::snprintf(buffer, sizeof(buffer), "Sensors %.1f ms | age %lu s", d.sensorUs / 1000.0, (unsigned long)d.sampleAgeSeconds); row(buffer);
         std::snprintf(buffer, sizeof(buffer), "Heap %lu / min %lu B", (unsigned long)d.freeHeap, (unsigned long)d.minHeap); row(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Largest %lu B | reset %u", (unsigned long)d.largestHeapBlock, unsigned(d.resetReason)); row(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Stack I/S/U %lu/%lu/%lu B", (unsigned long)d.inputStackFree, (unsigned long)d.sensorStackFree, (unsigned long)d.uiStackFree); row(buffer);
         std::snprintf(buffer, sizeof(buffer), "History %u/%u | %u B", (unsigned)history.size(), (unsigned)HistoryCapacity, (unsigned)sizeof(History)); row(buffer);
         std::snprintf(buffer, sizeof(buffer), "Uptime %lu h %lu m", (unsigned long)(d.uptimeSeconds / 3600), (unsigned long)(d.uptimeSeconds / 60 % 60)); row(buffer);
         std::snprintf(buffer, sizeof(buffer), "Frames %lu | errors %lu", (unsigned long)d.renders, (unsigned long)d.sensorErrors); row(buffer);

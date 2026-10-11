@@ -136,6 +136,8 @@ struct Diagnostics {
     uint32_t sensorUs = 0, sampleAgeSeconds = 0;
     uint32_t freeHeap = 0, minHeap = 0, uptimeSeconds = 0;
     uint32_t sensorErrors = 0;
+    uint32_t largestHeapBlock = 0, inputStackFree = 0, sensorStackFree = 0, uiStackFree = 0;
+    uint8_t resetReason = 0;
     uint16_t brightness = 0;
     bool fanOn = false, motion = false;
 };

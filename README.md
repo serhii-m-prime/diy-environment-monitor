@@ -17,6 +17,16 @@ projects. Build both profiles with `platformio run`, or open configuration with
 **Environment monitor**. The ESP32-S3-DevKitC-1 target uses 8 MB flash and no PSRAM.
 The explicit partition table reserves a crash-dump partition separately from RAM history.
 
+All three application tasks and both CPU idle tasks are watched by a 10-second
+task watchdog; a stalled task causes a panic/reboot with an ELF core dump in the
+128 KiB `coredump` partition. Keep the matching `.pio/build/<profile>/firmware.elf`
+to decode a crash. Service diagnostics include reset reason, largest free internal
+heap block and the minimum unused stack bytes for input/sensor/UI tasks.
+The debug profile enables heap poisoning, periodic integrity checks and a bounded
+128-record leak trace. Serial commands: `?` help, `h` heap statistics, `t` start
+leak tracing, `e` stop/dump tracing, `c` show the stored crash dump address/size.
+Tracing and heap poisoning are compiled out of the release profile.
+
 ## Controls and screens
 
 - Left button: **GPIO7 to GND**.
